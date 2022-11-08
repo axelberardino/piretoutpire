@@ -1,0 +1,76 @@
+error: using raw name is not recommended
+  --> $DIR/proto_suffix.rs:1:1
+   |
+LL | use crate::proto::MyType;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^ help: change this variable to: `MyTypeProto`
+   |
+   = note: `-D proto-suffix` implied by `-D warnings`
+
+error: using raw name is not recommended
+  --> $DIR/proto_suffix.rs:4:17
+   |
+LL |     let value = proto::MyType {
+   |                 ^^^^^^^^^^^^^ help: change this variable to: `MyTypeProto`
+
+error: using raw name is not recommended
+  --> $DIR/proto_suffix.rs:8:9
+   |
+LL |     foo(proto::MyType {
+   |         ^^^^^^^^^^^^^ help: change this variable to: `MyTypeProto`
+
+error: using raw name is not recommended
+  --> $DIR/proto_suffix.rs:13:16
+   |
+LL | fn foo(_value: proto::MyType) {}
+   |                ^^^^^^^^^^^^^ help: change this variable to: `MyTypeProto`
+
+error: using raw name is not recommended
+  --> $DIR/proto_suffix.rs:15:20
+   |
+LL | fn gen(_value: Box<proto::MyType>) {}
+   |                    ^^^^^^^^^^^^^ help: change this variable to: `MyTypeProto`
+
+error: using raw name is not recommended
+  --> $DIR/proto_suffix.rs:17:11
+   |
+LL | impl From<proto::MyType> for u32 {
+   |           ^^^^^^^^^^^^^ help: change this variable to: `MyTypeProto`
+
+error: using raw name is not recommended
+  --> $DIR/proto_suffix.rs:18:16
+   |
+LL |     fn from(_: proto::MyType) -> Self {
+   |                ^^^^^^^^^^^^^ help: change this variable to: `MyTypeProto`
+
+error: using raw name is not recommended
+  --> $DIR/proto_suffix.rs:23:23
+   |
+LL | impl From<String> for proto::MyType {
+   |                       ^^^^^^^^^^^^^ help: change this variable to: `MyTypeProto`
+
+error: using raw name is not recommended
+  --> $DIR/proto_suffix.rs:29:27
+   |
+LL | impl From<String> for Box<proto::MyType> {
+   |                           ^^^^^^^^^^^^^ help: change this variable to: `MyTypeProto`
+
+error: using raw name is not recommended
+  --> $DIR/proto_suffix.rs:40:20
+   |
+LL |         pub field: inner::Enum,
+   |                    ^^^^^^^^^^^ help: change this variable to: `EnumProto`
+
+error: using raw name is not recommended
+  --> $DIR/proto_suffix.rs:43:29
+   |
+LL |     impl prost::Message for MyType {
+   |                             ^^^^^^ help: change this variable to: `MyTypeProto`
+
+error: using raw name is not recommended
+  --> $DIR/proto_suffix.rs:82:33
+   |
+LL |         impl prost::Message for Enum {
+   |                                 ^^^^ help: change this variable to: `EnumProto`
+
+error: aborting due to 12 previous errors
+

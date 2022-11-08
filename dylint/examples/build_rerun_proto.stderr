@@ -1,0 +1,16 @@
+error: proto_builder::rerun_if_changed is not set
+  --> $DIR/build_rerun_proto.rs:12:5
+   |
+LL | /     tonic_build::configure()
+LL | |         .build_server(true)
+LL | |         .build_client(true)
+LL | |         .file_descriptor_set_path(out_dir.join("service_descriptor.bin"))
+...  |
+LL | |         )
+LL | |         .expect("unable to compile service");
+   | |____________________________________________^ help: configure proto_builder::rerun_if_changed when using: `tonic_build`
+   |
+   = note: `-D build-rerun-proto` implied by `-D warnings`
+
+error: aborting due to previous error
+

@@ -1,0 +1,28 @@
+error: do not impl Iterator or Stream, use helpers like ::iter()
+  --> $DIR/impl_iterator_stream.rs:8:1
+   |
+LL | / impl Iterator for Unit {
+LL | |     type Item = ();
+LL | |
+LL | |     fn next(&mut self) -> Option<Self::Item> {
+LL | |         unreachable!()
+LL | |     }
+LL | | }
+   | |_^
+   |
+   = note: `-D impl-iterator-stream` implied by `-D warnings`
+
+error: do not impl Iterator or Stream, use helpers like ::iter()
+  --> $DIR/impl_iterator_stream.rs:16:1
+   |
+LL | / impl futures::stream::Stream for Unit {
+LL | |     type Item = ();
+LL | |
+LL | |     fn poll_next(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+LL | |         unreachable!()
+LL | |     }
+LL | | }
+   | |_^
+
+error: aborting due to 2 previous errors
+

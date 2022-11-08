@@ -1,0 +1,10 @@
+error: TryFrom implementation should never return a tonic::Status, instead you should return AnyError or a typed error. You should map_err your AnyError/TypedError after the TryFrom.
+  --> $DIR/try_from_tonic_error.rs:5:5
+   |
+LL |     type Error = tonic::Status;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `-D try-from-tonic-error` implied by `-D warnings`
+
+error: aborting due to previous error
+

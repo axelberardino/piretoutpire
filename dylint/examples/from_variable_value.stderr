@@ -1,0 +1,10 @@
+error: using something else than value is not recommended
+  --> $DIR/from_variable_value.rs:5:13
+   |
+LL |     fn from(inner: String) -> Self {
+   |             ^^^^^^^^^^^^^ help: change this variable to: `value`
+   |
+   = note: `-D from-variable-value` implied by `-D warnings`
+
+error: aborting due to previous error
+

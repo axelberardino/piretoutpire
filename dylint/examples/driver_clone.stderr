@@ -1,0 +1,16 @@
+error: using `.clone()` on a gRPC driver
+  --> $DIR/driver_clone.rs:20:21
+   |
+LL |     let _clone_ko = driver.clone();
+   |                     ^^^^^^^^^^^^^^ help: try this: `Driver::clone(&driver)`
+   |
+   = note: `-D driver-clone` implied by `-D warnings`
+
+error: using `.clone()` on a gRPC driver
+  --> $DIR/driver_clone.rs:23:25
+   |
+LL |     let _ref_clone_ko = ref_driver.clone();
+   |                         ^^^^^^^^^^^^^^^^^^ help: try this: `Driver::clone(ref_driver)`
+
+error: aborting due to 2 previous errors
+

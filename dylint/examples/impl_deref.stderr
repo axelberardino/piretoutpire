@@ -1,0 +1,16 @@
+error: implementing Deref is not easy, be sure to be in a pointer-like struct
+  --> $DIR/impl_deref.rs:4:1
+   |
+LL | / impl std::ops::Deref for Duration {
+LL | |     type Target = String;
+LL | |
+LL | |     fn deref(&self) -> &String {
+LL | |         &self.0
+LL | |     }
+LL | | }
+   | |_^
+   |
+   = note: `-D impl-deref` implied by `-D warnings`
+
+error: aborting due to previous error
+

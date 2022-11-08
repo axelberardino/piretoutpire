@@ -1,0 +1,10 @@
+error: calling scylla directly is not recommended
+  --> $DIR/cql_statement.rs:5:13
+   |
+LL |     _query: PreparedStatement,
+   |             ^^^^^^^^^^^^^^^^^ help: consider using CQL Observer: `drivers::scylladb::QueryStatement`
+   |
+   = note: `-D cql-statement` implied by `-D warnings`
+
+error: aborting due to previous error
+

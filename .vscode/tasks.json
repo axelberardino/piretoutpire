@@ -1,0 +1,23 @@
+{
+  "version": "2.0.0",
+  "options": {
+      "shell": {
+          "executable": "/bin/bash",
+          "args": [
+              "-c"
+          ]
+      }
+  },
+	"tasks": [
+		{
+      "label": "cargo check --all-features --all-targets",
+      "type": "shell",
+      "command": "cargo check --all-features --all-targets",
+      "group": "build",
+      "presentation": {
+          "echo": true,
+          "focus": true
+      },
+    },
+	]
+}

@@ -1,0 +1,66 @@
+error: implementing a for collection cannot be done over T
+  --> $DIR/impl_for_collection.rs:6:1
+   |
+LL | / impl From<Foo> for HashSet<Foo> {
+LL | |     fn from(value: Foo) -> Self {
+LL | |         unreachable!()
+LL | |     }
+LL | | }
+   | |_^
+   |
+   = note: `-D impl-for-collection` implied by `-D warnings`
+
+error: implementing a for collection cannot be done over T
+  --> $DIR/impl_for_collection.rs:12:1
+   |
+LL | / impl From<Foo> for Vec<Foo> {
+LL | |     fn from(value: Foo) -> Self {
+LL | |         unreachable!()
+LL | |     }
+LL | | }
+   | |_^
+
+error: implementing a for collection cannot be done over T
+  --> $DIR/impl_for_collection.rs:18:1
+   |
+LL | / impl From<Foo> for hashbrown::HashMap<Foo, Foo> {
+LL | |     fn from(value: Foo) -> Self {
+LL | |         unreachable!()
+LL | |     }
+LL | | }
+   | |_^
+
+error: implementing a for collection cannot be done over T
+  --> $DIR/impl_for_collection.rs:24:1
+   |
+LL | / impl From<Foo> for hashbrown::HashSet<Foo> {
+LL | |     fn from(value: Foo) -> Self {
+LL | |         unreachable!()
+LL | |     }
+LL | | }
+   | |_^
+
+error: implementing a for collection cannot be done over T
+  --> $DIR/impl_for_collection.rs:30:1
+   |
+LL | / impl TryFrom<Foo> for Vec<String> {
+LL | |     type Error = ();
+LL | |
+LL | |     fn try_from(value: Foo) -> Result<Self, Self::Error> {
+LL | |         unreachable!()
+LL | |     }
+LL | | }
+   | |_^
+
+error: implementing a for collection cannot be done over T
+  --> $DIR/impl_for_collection.rs:41:5
+   |
+LL | /     impl From<Foo> for hashbrown::HashSet<Foo> {
+LL | |         fn from(value: Foo) -> Self {
+LL | |             unreachable!()
+LL | |         }
+LL | |     }
+   | |_____^
+
+error: aborting due to 6 previous errors
+

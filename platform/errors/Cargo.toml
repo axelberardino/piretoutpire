@@ -1,0 +1,16 @@
+[package]
+authors = ["Axel Berardino <axel.berardino@gmail.com>"]
+description = "Define and propagate software errors (thin layer atop `eyre` & `thiserror`)"
+edition = "2021"
+name = "errors"
+version = "0.1.0"
+
+[features]
+serde-integration = ["serde"]
+
+[dependencies]
+## External
+eyre = "0.6"
+thiserror = "1.0"
+## Features
+serde = { version = "1.0", optional = true }

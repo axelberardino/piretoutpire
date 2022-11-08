@@ -1,0 +1,28 @@
+[package]
+name = "piretoutpire"
+version = "0.1.0"
+edition = "2021"
+description = "Small custom simplified p2p"
+
+# FIXME: Check if serde is useful.
+
+[[bin]]
+name = "pire2pire"
+path = "src/bin/main.rs"
+
+[features]
+serde-integration = ["serde"]
+
+[dependencies]
+## External
+tokio = { version = "1", features = ["full"] }
+temp-file = "0.1.7"
+# Internal
+errors = { path = "../../platform/errors" }
+## Features
+serde = { version = "1.0", features = ["derive"], optional = true }
+
+[dev-dependencies]
+## External
+serde_json = { version = "1.0" }
+

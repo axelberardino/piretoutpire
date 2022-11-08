@@ -1,0 +1,66 @@
+error: implementing TryFrom/From cannot be done over collections
+  --> $DIR/impl_from_collection.rs:6:1
+   |
+LL | / impl From<HashSet<String>> for Foo {
+LL | |     fn from(value: HashSet<String>) -> Self {
+LL | |         unreachable!()
+LL | |     }
+LL | | }
+   | |_^
+   |
+   = note: `-D impl-from-collection` implied by `-D warnings`
+
+error: implementing TryFrom/From cannot be done over collections
+  --> $DIR/impl_from_collection.rs:12:1
+   |
+LL | / impl From<Vec<String>> for Foo {
+LL | |     fn from(value: Vec<String>) -> Self {
+LL | |         unreachable!()
+LL | |     }
+LL | | }
+   | |_^
+
+error: implementing TryFrom/From cannot be done over collections
+  --> $DIR/impl_from_collection.rs:18:1
+   |
+LL | / impl TryFrom<Vec<()>> for Foo {
+LL | |     type Error = ();
+LL | |
+LL | |     fn try_from(value: Vec<()>) -> Result<Self, Self::Error> {
+LL | |         unreachable!()
+LL | |     }
+LL | | }
+   | |_^
+
+error: implementing TryFrom/From cannot be done over collections
+  --> $DIR/impl_from_collection.rs:26:1
+   |
+LL | / impl From<hashbrown::HashMap<String, String>> for Foo {
+LL | |     fn from(value: hashbrown::HashMap<String, String>) -> Self {
+LL | |         unreachable!()
+LL | |     }
+LL | | }
+   | |_^
+
+error: implementing TryFrom/From cannot be done over collections
+  --> $DIR/impl_from_collection.rs:32:1
+   |
+LL | / impl From<hashbrown::HashSet<String>> for Foo {
+LL | |     fn from(value: hashbrown::HashSet<String>) -> Self {
+LL | |         unreachable!()
+LL | |     }
+LL | | }
+   | |_^
+
+error: implementing TryFrom/From cannot be done over collections
+  --> $DIR/impl_from_collection.rs:40:5
+   |
+LL | /     impl From<Vec<String>> for Foo {
+LL | |         fn from(value: Vec<String>) -> Self {
+LL | |             unreachable!()
+LL | |         }
+LL | |     }
+   | |_____^
+
+error: aborting due to 6 previous errors
+

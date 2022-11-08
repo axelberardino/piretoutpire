@@ -1,0 +1,4 @@
+allow-dbg-in-tests = true
+disallowed-methods = [
+  { path = "std::result::Result::ok", reason = "mainly used to discard errors that should be handled instead of ignored" },
+]

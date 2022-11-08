@@ -1,0 +1,59 @@
+# PireToutPire
+
+This project implements a simplified bittorrent clone.
+
+# Running and playing with it
+
+Launch a server like that:
+```
+cargo run -- seed
+```
+Then there is a CLI (using clap and colored) which can be called like that:
+```
+cargo run -- help
+```
+
+# Tests
+
+Everything is tested.
+```
+cargo test
+```
+
+# Linting
+
+You'll find some custom linters made with dylint. There are some very specific
+rules we were enforcing in my previous company. These are examples of what can
+be done.
+
+Launch clippy:
+```
+cargo clippy
+```
+
+Launch personal linter:
+```
+# You might need to install dylint
+cargo install cargo-dylint dylint-link
+
+# Launch it!
+cargo dylint --all -- --all-features --bins --examples --tests
+```
+
+## VsCode integration
+
+It's possible to change the default cargo command in VsCode to automatically
+launch clippy and dylint. Very handy to view at glance any warnings.
+
+In settings.json, just override the default command like that:
+```
+    "rust-analyzer.checkOnSave.overrideCommand": [
+        "cargo",
+        "dylint",
+        "--all",
+        "--workspace",
+        "--",
+        "--all-targets",
+        "--message-format=json"
+    ]
+```

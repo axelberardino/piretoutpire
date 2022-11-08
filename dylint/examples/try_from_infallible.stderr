@@ -1,0 +1,28 @@
+error: calling a try_{into, from} with Infallible Error
+  --> $DIR/try_from_infallible.rs:20:29
+   |
+LL |     let _ignored: Unit = ().try_into().expect("");
+   |                             ^^^^^^^^^^ help: use the no faillable method instead: `from,into`
+   |
+   = note: `-D try-from-infallible` implied by `-D warnings`
+
+error: calling a try_{into, from} with Infallible Error
+  --> $DIR/try_from_infallible.rs:22:20
+   |
+LL |     let _ignored = Unit::try_from(()).expect("");
+   |                    ^^^^^^^^^^^^^^^^^^ help: use the no faillable method instead: `from,into`
+
+error: calling a try_{into, from} with Infallible Error
+  --> $DIR/try_from_infallible.rs:24:39
+   |
+LL |     let _ignored: Unit = Some(()).map(TryInto::try_into).expect("").expect("");
+   |                                       ^^^^^^^^^^^^^^^^^ help: use the no faillable method instead: `from,into`
+
+error: calling a try_{into, from} with Infallible Error
+  --> $DIR/try_from_infallible.rs:25:39
+   |
+LL |     let _ignored: Unit = Some(()).map(TryFrom::try_from).expect("").expect("");
+   |                                       ^^^^^^^^^^^^^^^^^ help: use the no faillable method instead: `from,into`
+
+error: aborting due to 4 previous errors
+

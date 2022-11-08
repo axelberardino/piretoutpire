@@ -1,0 +1,22 @@
+cargo-features = ["named-profiles"]
+
+[workspace]
+exclude = ["dylint/"]
+members = [
+  "projects/piretoutpire",
+
+  "platform/errors",
+]
+resolver = "2"
+
+[workspace.metadata.dylint]
+libraries = [{ path = "dylint/" }]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+codegen-units = 1
+debug = true
+lto = "thin"
+panic = "abort"
