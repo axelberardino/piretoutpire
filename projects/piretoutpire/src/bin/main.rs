@@ -1,12 +1,11 @@
 use core::time;
-use std::io::{self, BufRead, BufReader, Write};
-use std::net::{TcpListener, TcpStream};
-use std::thread;
-
-use eyre::bail;
-
-pub type AnyError = eyre::Error;
-pub type AnyResult<T> = eyre::Result<T>;
+use errors::{bail, AnyError, AnyResult};
+use piretoutpire::file::file_chunk::FileChunk;
+use std::{
+    io::{self, BufRead, BufReader, Write},
+    net::{TcpListener, TcpStream},
+    thread,
+};
 
 fn handle_connection(stream: TcpStream) -> io::Result<()> {
     let peer_addr = stream.peer_addr().expect("Stream has peer_addr");
@@ -54,8 +53,6 @@ impl TryFrom<&str> for ConnectionType {
 }
 
 fn main() -> AnyResult<()> {
-    let fc = FileChunk::open("/tmp/toto.txt");
-
     let args: Vec<String> = std::env::args().collect();
     if args.len() <= 1 {
         panic!("missing action (client or server)");
@@ -63,14 +60,19 @@ fn main() -> AnyResult<()> {
     if args.len() <= 2 {
         panic!("missing host:port");
     }
-    if args.len() <= 3 {
-        panic!("missing working folder");
-    }
+    // if args.len() <= 3 {
+    //     panic!("missing working folder");
+    // }
     println!("{:?}", args);
 
     let connection_type: ConnectionType = args[1].as_str().try_into()?;
     let addr = args[2].clone();
-    let folder = args[3].clone();
+    let file = if !args[3].is_empty() {
+        args[3].clone()
+    } else {
+        "/tmp/toto.txt".to_owned()
+    };
+    let fc = FileChunk::open_existing(&file);
 
     match connection_type {
         ConnectionType::Client => {
