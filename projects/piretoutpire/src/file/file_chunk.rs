@@ -114,7 +114,7 @@ where
         );
     }
     bw.seek(SeekFrom::Start(from as u64))?;
-    bw.write(data)?;
+    bw.write_all(data)?;
     bw.flush()?;
     Ok(())
 }

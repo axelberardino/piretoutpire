@@ -1,4 +1,4 @@
-use super::file_chunk::{FileChunk, FileFixedSizedChunk, DEFAULT_CHUNK_SIZE};
+use super::file_chunk::{FileFixedSizedChunk, DEFAULT_CHUNK_SIZE};
 use crc32fast::Hasher;
 use errors::{bail, AnyResult};
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,7 @@ impl<P: AsRef<Path>> TorrentFile<P> {
 
     pub fn new_with_chunk_size<const CHUNK_SIZE: u64>(torrent_file: P, original_file: P) -> AnyResult<Self> {
         let torrent = Self {
-            torrent_file: torrent_file,
+            torrent_file,
             metadata: Metadata::extract_from_file::<P, CHUNK_SIZE>(original_file)?,
         };
         torrent.metadata.dump(&torrent.torrent_file)?;
@@ -44,7 +44,7 @@ impl<P: AsRef<Path>> TorrentFile<P> {
             if len == 0 {
                 break;
             }
-            whole_file_hasher.update(&buf);
+            whole_file_hasher.update(buf);
             reader.consume(len);
         }
 
@@ -60,7 +60,7 @@ impl<P: AsRef<Path>> TorrentFile<P> {
 
         Ok(Self {
             metadata,
-            torrent_file: torrent_file,
+            torrent_file,
         })
     }
 }
