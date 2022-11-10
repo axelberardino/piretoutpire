@@ -12,7 +12,7 @@ use std::{
 #[derive(Debug)]
 pub struct TorrentFile<P: AsRef<Path>> {
     torrent_file: P,
-    metadata: Metadata,
+    pub metadata: Metadata,
 }
 
 impl<P: AsRef<Path>> TorrentFile<P> {
@@ -69,13 +69,13 @@ impl<P: AsRef<Path>> TorrentFile<P> {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Metadata {
-    original_file: String,
-    file_size: u64,
-    file_crc: u32,
-    chunk_size: u64,
+    pub original_file: String,
+    pub file_size: u64,
+    pub file_crc: u32,
+    pub chunk_size: u64,
     // contains none for incomplete chunks
     // contains the crc of already got chunks
-    completed_chunks: Vec<Option<u32>>,
+    pub completed_chunks: Vec<Option<u32>>,
 }
 
 impl Metadata {

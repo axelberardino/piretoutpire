@@ -1,6 +1,6 @@
 use core::time;
 use errors::{bail, AnyError, AnyResult};
-use piretoutpire::file::file_chunk::FileChunk;
+use piretoutpire::{file::file_chunk::FileChunk, manager::manager::Manager};
 use std::{
     io::{self, BufRead, BufReader, Write},
     net::{TcpListener, TcpStream},
@@ -38,6 +38,8 @@ fn handle_connection(stream: TcpStream) -> io::Result<()> {
 enum ConnectionType {
     Client,
     Server,
+    Seeder,
+    Leecher,
 }
 
 impl TryFrom<&str> for ConnectionType {
@@ -47,12 +49,15 @@ impl TryFrom<&str> for ConnectionType {
         Ok(match value {
             "client" => Self::Client,
             "server" => Self::Server,
+            "seeder" => Self::Seeder,
+            "leecher" => Self::Leecher,
             _ => bail!("unknown type {}", value),
         })
     }
 }
 
-fn main() -> AnyResult<()> {
+#[tokio::main]
+async fn main() -> AnyResult<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() <= 1 {
         panic!("missing action (client or server)");
@@ -72,14 +77,14 @@ fn main() -> AnyResult<()> {
     } else {
         "/tmp/toto.txt".to_owned()
     };
-    let fc = FileChunk::open_existing(&file);
-
     match connection_type {
         ConnectionType::Client => {
+            let mut fc = FileChunk::open_existing(&file)?;
             let mut stream = TcpStream::connect(addr)?;
-            for i in 0..10 {
+            for chunk_id in 0..fc.nb_chunks() {
                 thread::sleep(time::Duration::from_millis(100));
-                stream.write_all(&[10 + i, 20 + i, 30 + i, 40 + i])?;
+                let raw_chunk = fc.read_chunk(chunk_id)?;
+                stream.write_all(&raw_chunk)?;
                 stream.flush()?;
             }
         }
@@ -96,6 +101,14 @@ fn main() -> AnyResult<()> {
                     println!("stream fail")
                 }
             }
+        }
+        ConnectionType::Seeder => {
+            let mut manager = Manager::new("127.0.0.1:4000".parse()?);
+            manager.share_existing_file("/tmp/toto.txt").await?;
+        }
+        ConnectionType::Leecher => {
+            let mut manager = Manager::new("127.0.0.1:4001".parse()?);
+            manager.download_file(0).await?;
         }
     }
 
