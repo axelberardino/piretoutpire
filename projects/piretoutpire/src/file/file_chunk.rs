@@ -1,3 +1,4 @@
+use crate::utils::div::div_ceil;
 use errors::{bail, AnyResult, Context};
 use std::{
     cmp::min,
@@ -74,7 +75,7 @@ impl<const CHUNK_SIZE: u64> FileFixedSizedChunk<CHUNK_SIZE> {
 
     // Number of chunks the file is currently split in.
     pub fn nb_chunks(&self) -> u64 {
-        ((self.file_size + CHUNK_SIZE - 1) / CHUNK_SIZE) as u64
+        div_ceil(self.file_size, CHUNK_SIZE)
     }
 
     // Size of the file when retrieved.

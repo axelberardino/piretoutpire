@@ -1,13 +1,20 @@
 use errors::{bail, AnyError};
 
 #[derive(Debug)]
+pub enum ErrorCode {
+    FileNotFound = 1,
+    ChunkNotFound = 2,
+    InvalidChunk = 3,
+}
+
+#[derive(Debug)]
 pub enum Command {
-    Handshake(u32),               // 0x1, crc
-    GetChunk(u32, u32),           // 0x2, crc, chunk_id
-    SendChunk(u32, u32, Vec<u8>), // 0x3, crc, chunk_id, chunk
-    FileNotFound,                 // 0x4
-    ChunkNotFound,                // 0x5
-    InvalidChunk,                 // 0x6
+    // Half the range for error code
+    ErrorOccured(ErrorCode), // 0x80 + ErrorCode
+    // Other half for messages
+    Handshake(u32),               // 0x01, crc
+    GetChunk(u32, u32),           // 0x02, crc, chunk_id
+    SendChunk(u32, u32, Vec<u8>), // 0x03, crc, chunk_id, chunk
 }
 // TODO send host:port list ^
 
@@ -30,7 +37,7 @@ impl TryFrom<&[u8]> for Command {
                 0x1 => {
                     if value.len() < MIN_HANDSHAKE_SIZE {
                         bail!(
-                            "can't decode handshake size too low ({} < {})",
+                            "can't decode handshake, size too low ({} < {})",
                             value.len(),
                             MIN_HANDSHAKE_SIZE
                         );
@@ -42,7 +49,7 @@ impl TryFrom<&[u8]> for Command {
                 0x2 => {
                     if value.len() < MIN_GETCHUNK_SIZE {
                         bail!(
-                            "can't decode get_chunk size too low ({} < {})",
+                            "can't decode get_chunk, size too low ({} < {})",
                             value.len(),
                             MIN_GETCHUNK_SIZE
                         );
@@ -56,7 +63,7 @@ impl TryFrom<&[u8]> for Command {
                 0x3 => {
                     if value.len() < MIN_SENDCHUNK_SIZE {
                         bail!(
-                            "can't decode send_chunk size too low ({} < {})",
+                            "can't decode send_chunk, size too low ({} < {})",
                             value.len(),
                             MIN_SENDCHUNK_SIZE
                         );
@@ -73,9 +80,9 @@ impl TryFrom<&[u8]> for Command {
                         .collect::<Vec<u8>>();
                     Self::SendChunk(crc, chunk_id, chunk)
                 }
-                0x4 => Self::FileNotFound,
-                0x5 => Self::ChunkNotFound,
-                0x6 => Self::InvalidChunk,
+                0x81 => Self::ErrorOccured(ErrorCode::FileNotFound),
+                0x82 => Self::ErrorOccured(ErrorCode::ChunkNotFound),
+                0x83 => Self::ErrorOccured(ErrorCode::InvalidChunk),
                 _ => bail!("Unknown command {}", raw_command),
             })
         } else {
@@ -106,9 +113,9 @@ impl From<Command> for Vec<u8> {
                 res.extend(chunk_buf);
                 res
             }
-            Command::FileNotFound => vec![0x4],
-            Command::ChunkNotFound => vec![0x5],
-            Command::InvalidChunk => vec![0x6],
+            Command::ErrorOccured(ErrorCode::FileNotFound) => vec![0x81],
+            Command::ErrorOccured(ErrorCode::ChunkNotFound) => vec![0x82],
+            Command::ErrorOccured(ErrorCode::InvalidChunk) => vec![0x83],
         }
     }
 }

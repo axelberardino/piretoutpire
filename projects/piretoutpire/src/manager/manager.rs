@@ -3,7 +3,7 @@ use crate::{
         file_chunk::{FileChunk, DEFAULT_CHUNK_SIZE},
         torrent_file::TorrentFile,
     },
-    network::protocol::Command,
+    network::protocol::{Command, ErrorCode},
 };
 use errors::{bail, AnyResult};
 use std::{
@@ -27,7 +27,7 @@ pub struct Context {
     // Realtime list of peers
     pub peers: HashMap<u32, SocketAddr>,
 
-    // TODO  Associate that to a hashmap crc + struct
+    // List of all available torrents currently owned, or currently downloading.
     pub available_torrents: HashMap<u32 /*crc*/, (TorrentFile<String> /*metadata*/, FileChunk /*file*/)>,
 }
 
@@ -51,18 +51,38 @@ impl Manager {
 
     // Start downloading a file, or resume downloading
     pub async fn download_file(&mut self, crc: u32) -> AnyResult<()> {
-        let client_addr: SocketAddr = "127.0.0.1:4000".parse()?;
-        let stream = TcpStream::connect(client_addr).await?;
-
         let ctx = Arc::clone(&self.ctx);
         // TODO ask for peers.
 
-        let chunk_id = 0;
-        let crc = 3613099103;
+        let file_size = 23;
+        let torrent = TorrentFile::preallocate(
+            "/tmp/mytorrent.metadata".to_string(),
+            "dl.txt".to_string(),
+            file_size,
+            crc,
+            DEFAULT_CHUNK_SIZE,
+        );
+        let chunks = FileChunk::open_new("/tmp/dl.txt", file_size)?;
+        let nb_chunks = chunks.nb_chunks();
+        {
+            let mut guard = ctx.lock().expect("invalid mutex");
+            let ctx = guard.deref_mut();
 
-        let handle = tokio::spawn(async move { ask_for_chunks(ctx, stream, crc, chunk_id).await });
+            ctx.available_torrents.insert(crc, (torrent, chunks));
+        }
+
+        for chunk_id in 0..nb_chunks {
+            let local_ctx = Arc::clone(&ctx);
+            let handle = tokio::spawn(async move {
+                let client_addr: SocketAddr = "127.0.0.1:4000".parse()?;
+                let stream = TcpStream::connect(client_addr).await?;
+                ask_for_chunk(local_ctx, stream, crc, chunk_id as u32).await
+            });
+            handle.await??;
+        }
+
         // self.start_stream().await?;
-        handle.await?
+        Ok(())
     }
 
     // Start to share a file on the peer network, as a seeder.
@@ -87,7 +107,7 @@ impl Manager {
         loop {
             let (stream, _) = listener.accept().await?;
             let ctx = Arc::clone(&self.ctx);
-            tokio::spawn(async move { handle_connection(ctx, stream).await });
+            tokio::spawn(async move { listen_to_command(ctx, stream).await });
         }
     }
 }
@@ -111,6 +131,8 @@ macro_rules! read_all {
     }};
 }
 
+// Interpret a command and act accordingly. This is where request/response are
+// handled.
 async fn apply_command(
     ctx: Arc<Mutex<Context>>,
     writer: &mut BufWriter<WriteHalf<'_>>,
@@ -129,15 +151,15 @@ async fn apply_command(
                 match ctx.available_torrents.get_mut(&crc) {
                     Some((torrent, chunks)) => {
                         if chunk_id as usize >= torrent.metadata.completed_chunks.len() {
-                            (Command::InvalidChunk).into()
+                            Command::ErrorOccured(ErrorCode::InvalidChunk).into()
                         } else {
                             match chunks.read_chunk(chunk_id as u64) {
                                 Ok(chunk) => Command::SendChunk(crc, chunk_id, chunk).into(),
-                                Err(_) => Command::ChunkNotFound.into(),
+                                Err(_) => Command::ErrorOccured(ErrorCode::ChunkNotFound).into(),
                             }
                         }
                     }
-                    None => Command::FileNotFound.into(),
+                    None => Command::ErrorOccured(ErrorCode::FileNotFound).into(),
                 }
             };
             eprintln!("sending buf {:?}", &response);
@@ -161,16 +183,17 @@ async fn apply_command(
                 None => eprintln!("Got chunk for an unknown file"),
             }
         }
-        Command::FileNotFound => eprintln!("peer don't have this file"),
-        Command::ChunkNotFound => eprintln!("peer don't have this chunk"),
-        Command::InvalidChunk => eprintln!("peer said chunk was invalid"),
+        Command::ErrorOccured(ErrorCode::FileNotFound) => eprintln!("peer don't have this file"),
+        Command::ErrorOccured(ErrorCode::ChunkNotFound) => eprintln!("peer don't have this chunk"),
+        Command::ErrorOccured(ErrorCode::InvalidChunk) => eprintln!("peer said chunk was invalid"),
     }
 
     writer.flush().await?;
     Ok(())
 }
 
-async fn handle_connection(ctx: Arc<Mutex<Context>>, mut stream: TcpStream) -> AnyResult<()> {
+// Start to listen to command. One instance will be spawn for each peer.
+async fn listen_to_command(ctx: Arc<Mutex<Context>>, mut stream: TcpStream) -> AnyResult<()> {
     let peer_addr = stream.peer_addr()?;
     eprintln!("Connected to {}", peer_addr);
     let (reader, writer) = stream.split();
@@ -194,7 +217,10 @@ async fn handle_connection(ctx: Arc<Mutex<Context>>, mut stream: TcpStream) -> A
     Ok(())
 }
 
-async fn ask_for_chunks(
+// Ask for a given file chunk.
+// Start by sending a GetChunk request, and received either an error code
+// or the chunk as a raw buffer.
+async fn ask_for_chunk(
     ctx: Arc<Mutex<Context>>,
     mut stream: TcpStream,
     crc: u32,

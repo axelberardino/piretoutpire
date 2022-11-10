@@ -1,4 +1,5 @@
 use super::file_chunk::{FileFixedSizedChunk, DEFAULT_CHUNK_SIZE};
+use crate::utils::div::div_ceil;
 use crc32fast::Hasher;
 use errors::{bail, reexports::eyre::ContextCompat, AnyResult};
 use serde::{Deserialize, Serialize};
@@ -27,9 +28,13 @@ impl<P: AsRef<Path>> TorrentFile<P> {
             torrent_file,
             metadata: Metadata::extract_from_file::<P, CHUNK_SIZE>(original_file)?,
         };
-        torrent.metadata.dump(&torrent.torrent_file)?;
-
+        torrent.dump()?;
         Ok(torrent)
+    }
+
+    // Flush to a metadta file.
+    pub fn dump(&self) -> AnyResult<()> {
+        self.metadata.dump(&self.torrent_file)
     }
 
     // Load an existing torrent metadata from an existing file.
@@ -64,6 +69,7 @@ impl<P: AsRef<Path>> TorrentFile<P> {
         })
     }
 
+    // Preallocate an in-memory metadata.
     pub fn preallocate(
         torrent_file: P,
         original_filename: String,
@@ -81,7 +87,7 @@ impl<P: AsRef<Path>> TorrentFile<P> {
                 file_size,
                 file_crc,
                 chunk_size,
-                completed_chunks: vec![None; (file_size / chunk_size) as usize],
+                completed_chunks: vec![None; div_ceil(file_size, chunk_size) as usize],
                 original_filename,
             },
             torrent_file,
