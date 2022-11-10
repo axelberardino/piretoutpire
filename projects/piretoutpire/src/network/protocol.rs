@@ -1,5 +1,5 @@
 use super::chunk_pieces::{ChunkPieces, NetChunk};
-use errors::{bail, reexports::eyre::ContextCompat, AnyError};
+use errors::{bail, AnyError};
 
 pub trait FileSharable {
     type Addr;
@@ -13,10 +13,11 @@ pub trait FileSharable {
 
 #[derive(Debug)]
 pub enum Command {
-    // Handshake({is_seeder: bool}), // 0x01
-    GetChunk(u32),      // 0x02
-    SendChunk(Vec<u8>), // 0x03
+    Handshake(u32),          // 0x01, crc
+    GetChunk(u32),           // 0x02, chunk_id
+    SendChunk(u32, Vec<u8>), // 0x03, chunk_id, chunk
 }
+// TODO send host:port list
 
 // Convert a raw buffer into a command.
 impl TryFrom<&[u8]> for Command {
@@ -25,8 +26,31 @@ impl TryFrom<&[u8]> for Command {
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if let Some(raw_command) = value.get(0) {
             Ok(match raw_command {
-                0x2 => Command::GetChunk(*value.get(1).context("invalid get chunk command")? as u32),
-                0x3 => Command::SendChunk(value.iter().skip(1).map(|item| *item).collect::<Vec<u8>>()),
+                0x1 => {
+                    if value.len() < 5 {
+                        bail!("can't decode crc");
+                    }
+                    let slice: [u8; 4] = core::array::from_fn(|i| value[i + 1]);
+                    let crc = u8_array_to_u32(&slice);
+                    Command::Handshake(crc)
+                }
+                0x2 => {
+                    if value.len() < 5 {
+                        bail!("can't decode chunk_id");
+                    }
+                    let slice: [u8; 4] = core::array::from_fn(|i| value[i + 1]);
+                    let chunk_id = u8_array_to_u32(&slice);
+                    Command::GetChunk(chunk_id)
+                }
+                0x3 => {
+                    if value.len() < 5 {
+                        bail!("can't decode chunk_id");
+                    }
+                    let slice: [u8; 4] = core::array::from_fn(|i| value[i + 1]);
+                    let chunk_id = u8_array_to_u32(&slice);
+                    let chunk = value.iter().skip(5).map(|item| *item).collect::<Vec<u8>>();
+                    Command::SendChunk(chunk_id, chunk)
+                }
                 _ => bail!("Unknown command {}", raw_command),
             })
         } else {
@@ -39,14 +63,19 @@ impl TryFrom<&[u8]> for Command {
 impl From<Command> for Vec<u8> {
     fn from(value: Command) -> Self {
         match value {
-            Command::GetChunk(chunk_id) => {
-                let mut res = vec![0x2];
-                let encoded = u32_to_u8_array(chunk_id);
-                res.extend(encoded);
+            Command::Handshake(crc) => {
+                let mut res = vec![0x1];
+                res.extend(u32_to_u8_array(crc));
                 res
             }
-            Command::SendChunk(chunk_buf) => {
+            Command::GetChunk(chunk_id) => {
+                let mut res = vec![0x2];
+                res.extend(u32_to_u8_array(chunk_id));
+                res
+            }
+            Command::SendChunk(chunk_id, chunk_buf) => {
                 let mut res = vec![0x3];
+                res.extend(u32_to_u8_array(chunk_id));
                 res.extend(chunk_buf);
                 res
             }
@@ -62,3 +91,14 @@ fn u32_to_u8_array(x: u32) -> [u8; 4] {
 
     [b1, b2, b3, b4]
 }
+
+fn u8_array_to_u32(array: &[u8; 4]) -> u32 {
+    ((array[0] as u32) << 24)
+        + ((array[1] as u32) << 16)
+        + ((array[2] as u32) << 8)
+        + ((array[3] as u32) << 0)
+}
+
+#[cfg(test)]
+#[path = "protocol_test.rs"]
+mod protocol_test;
