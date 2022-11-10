@@ -1,7 +1,4 @@
-use super::{
-    chunk_pieces::{ChunkPieces, NetChunk},
-    protocol::FileSharable,
-};
+use super::{chunk_pieces::ChunkPieces, protocol::FileSharable};
 use std::net::SocketAddr;
 
 pub struct FileSharing {}

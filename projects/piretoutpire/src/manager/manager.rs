@@ -8,18 +8,14 @@ use crate::{
 use errors::{bail, AnyResult};
 use std::{
     collections::HashMap,
-    io::BufReader,
     net::SocketAddr,
     ops::DerefMut,
     path::Path,
     sync::{Arc, Mutex},
 };
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufWriter},
-    net::{
-        tcp::{ReadHalf, WriteHalf},
-        TcpListener, TcpStream,
-    },
+    io::{AsyncReadExt, AsyncWriteExt, BufWriter},
+    net::{tcp::WriteHalf, TcpListener, TcpStream},
 };
 
 pub struct Manager {
@@ -30,18 +26,16 @@ pub struct Manager {
 pub struct Context {
     // Realtime list of peers
     pub peers: HashMap<u32, SocketAddr>,
-    // Metadata
-    pub torrent: Option<TorrentFile<String>>,
-    // File
-    pub chunks: Option<FileChunk>,
+
+    // TODO  Associate that to a hashmap crc + struct
+    pub available_torrents: HashMap<u32 /*crc*/, (TorrentFile<String> /*metadata*/, FileChunk /*file*/)>,
 }
 
 impl Context {
     pub fn new() -> Self {
         Self {
             peers: HashMap::new(),
-            torrent: None,
-            chunks: None,
+            available_torrents: HashMap::new(),
         }
     }
 }
@@ -63,7 +57,10 @@ impl Manager {
         let ctx = Arc::clone(&self.ctx);
         // TODO ask for peers.
 
-        let handle = tokio::spawn(async move { ask_for_chunks(ctx, stream).await });
+        let chunk_id = 0;
+        let crc = 3613099103;
+
+        let handle = tokio::spawn(async move { ask_for_chunks(ctx, stream, crc, chunk_id).await });
         // self.start_stream().await?;
         handle.await?
     }
@@ -77,8 +74,8 @@ impl Manager {
         let chunks = FileChunk::open_existing(&torrent.metadata.original_file)?;
         {
             let mut ctx = self.ctx.lock().expect("invalid mutex");
-            ctx.torrent = Some(torrent);
-            ctx.chunks = Some(chunks);
+            ctx.available_torrents
+                .insert(torrent.metadata.file_crc, (torrent, chunks));
         }
 
         self.start_stream().await
@@ -123,38 +120,50 @@ async fn apply_command(
         Command::Handshake(crc) => {
             eprintln!("handshake, ask for crc {}", crc);
         }
-        Command::GetChunk(chunk_id) => {
+        Command::GetChunk(crc, chunk_id) => {
             eprintln!("applying get_chunk {}", chunk_id);
-            let buf = {
+            let response: Vec<u8> = {
                 let mut guard = ctx.lock().expect("invalid mutex");
                 let ctx = guard.deref_mut();
 
-                let torrent = ctx.torrent.as_ref().unwrap();
-                if chunk_id as usize >= torrent.metadata.completed_chunks.len() {
-                    bail!(
-                        "invalid chunk_id, id ({}) >= len({})",
-                        chunk_id,
-                        torrent.metadata.completed_chunks.len()
-                    )
+                match ctx.available_torrents.get_mut(&crc) {
+                    Some((torrent, chunks)) => {
+                        if chunk_id as usize >= torrent.metadata.completed_chunks.len() {
+                            (Command::InvalidChunk).into()
+                        } else {
+                            match chunks.read_chunk(chunk_id as u64) {
+                                Ok(chunk) => Command::SendChunk(crc, chunk_id, chunk).into(),
+                                Err(_) => Command::ChunkNotFound.into(),
+                            }
+                        }
+                    }
+                    None => Command::FileNotFound.into(),
                 }
-                let chunk = ctx.chunks.as_mut().unwrap().read_chunk(chunk_id as u64)?;
-                let buf: Vec<u8> = Command::SendChunk(chunk_id, chunk).into();
-                buf
             };
-            eprintln!("sending buf {:?}", &buf);
-            writer.write_all(buf.as_slice()).await?;
+            eprintln!("sending buf {:?}", &response);
+            writer.write_all(response.as_slice()).await?;
         }
-        Command::SendChunk(chunk_id, raw_chunk) => {
+        Command::SendChunk(crc, chunk_id, raw_chunk) => {
             eprintln!("received buf {:?}", &raw_chunk);
             let mut guard = ctx.lock().expect("invalid mutex");
             let ctx = guard.deref_mut();
 
-            let torrent = ctx.torrent.as_mut().unwrap();
-            torrent.metadata.completed_chunks[chunk_id as usize] = Some(0);
-
-            let chunks = ctx.chunks.as_mut().unwrap();
-            chunks.write_chunk(chunk_id as u64, raw_chunk.as_slice())?;
+            match ctx.available_torrents.get_mut(&crc) {
+                Some((torrent, chunks)) => {
+                    if chunk_id as usize >= torrent.metadata.completed_chunks.len() {
+                        eprintln!("Invalid chunk_id {} for {}", chunk_id, crc);
+                    } else {
+                        // Update metadata and write local chunk.
+                        torrent.metadata.completed_chunks[chunk_id as usize] = Some(0);
+                        chunks.write_chunk(chunk_id as u64, raw_chunk.as_slice())?;
+                    }
+                }
+                None => eprintln!("Got chunk for an unknown file"),
+            }
         }
+        Command::FileNotFound => eprintln!("peer don't have this file"),
+        Command::ChunkNotFound => eprintln!("peer don't have this chunk"),
+        Command::InvalidChunk => eprintln!("peer said chunk was invalid"),
     }
 
     writer.flush().await?;
@@ -185,19 +194,19 @@ async fn handle_connection(ctx: Arc<Mutex<Context>>, mut stream: TcpStream) -> A
     Ok(())
 }
 
-async fn ask_for_chunks(ctx: Arc<Mutex<Context>>, mut stream: TcpStream) -> AnyResult<()> {
+async fn ask_for_chunks(
+    ctx: Arc<Mutex<Context>>,
+    mut stream: TcpStream,
+    crc: u32,
+    chunk_id: u32,
+) -> AnyResult<()> {
     let peer_addr = stream.peer_addr()?;
     eprintln!("Connecting to {}", peer_addr);
     let (reader, writer) = stream.split();
     let mut reader = tokio::io::BufReader::new(reader);
     let mut writer = tokio::io::BufWriter::new(writer);
 
-    let chunk_id = 0;
-
-    // Ask for peers.
-
-    let buf: Vec<u8> = Command::GetChunk(chunk_id).into();
-    dbg!(&buf);
+    let buf: Vec<u8> = Command::GetChunk(crc, chunk_id).into();
     writer.write_all(buf.as_slice()).await?;
     writer.flush().await?;
 
@@ -207,18 +216,6 @@ async fn ask_for_chunks(ctx: Arc<Mutex<Context>>, mut stream: TcpStream) -> AnyR
         bail!("invalid buffer");
     }
 
-    // // Update client chunks.
-    // {
-    //     let mut guard = ctx.lock().expect("invalid mutex");
-    //     let ctx = guard.deref_mut();
-
-    //     let torrent = ctx.torrent.as_mut().unwrap();
-    //     torrent.metadata.completed_chunks[chunk_id as usize] = Some(0);
-
-    //     let chunks = ctx.chunks.as_mut().unwrap();
-    //     chunks.write_chunk(chunk_id as u64, raw_chunk)?;
-    // }
-    dbg!(&raw_chunk);
     match raw_chunk.as_slice().try_into() {
         Ok(command) => apply_command(Arc::clone(&ctx), &mut writer, command).await?,
         Err(err) => eprintln!("Unknown command received! {}", err),

@@ -1,6 +1,6 @@
 use super::file_chunk::{FileFixedSizedChunk, DEFAULT_CHUNK_SIZE};
 use crc32fast::Hasher;
-use errors::{bail, AnyResult};
+use errors::{bail, reexports::eyre::ContextCompat, AnyResult};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{File, OpenOptions},
@@ -63,12 +63,37 @@ impl<P: AsRef<Path>> TorrentFile<P> {
             torrent_file,
         })
     }
+
+    pub fn preallocate(
+        torrent_file: P,
+        original_filename: String,
+        file_size: u64,
+        file_crc: u32,
+        chunk_size: u64,
+    ) -> Self {
+        Self {
+            metadata: Metadata {
+                original_file: torrent_file
+                    .as_ref()
+                    .with_file_name(&original_filename)
+                    .display()
+                    .to_string(),
+                file_size,
+                file_crc,
+                chunk_size,
+                completed_chunks: vec![None; (file_size / chunk_size) as usize],
+                original_filename,
+            },
+            torrent_file,
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Metadata {
+    pub original_filename: String,
     pub original_file: String,
     pub file_size: u64,
     pub file_crc: u32,
@@ -91,7 +116,10 @@ impl Metadata {
             whole_file_hasher.update(&chunk);
         }
 
+        let filename = original_file.as_ref().file_name().context("invalid filename")?;
+        let filename = filename.to_str().context("invalid string")?;
         Ok(Self {
+            original_filename: filename.to_string(),
             original_file: original_file.as_ref().display().to_string(),
             file_size: chunks.file_size(),
             file_crc: whole_file_hasher.finalize(),

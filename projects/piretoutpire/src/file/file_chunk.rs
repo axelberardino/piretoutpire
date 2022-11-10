@@ -6,7 +6,8 @@ use std::{
     path::Path,
 };
 
-pub const DEFAULT_CHUNK_SIZE: u64 = 1024 * 1024; // 1 Mo chunks.
+// pub const DEFAULT_CHUNK_SIZE: u64 = 1024 * 1024; // 1 Mo chunks.
+pub const DEFAULT_CHUNK_SIZE: u64 = 2; // 1 Mo chunks.
 
 pub type FileChunk = FileFixedSizedChunk<DEFAULT_CHUNK_SIZE>;
 

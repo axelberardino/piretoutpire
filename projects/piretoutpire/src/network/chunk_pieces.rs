@@ -32,9 +32,3 @@ impl ChunkPieces {
         self.0.iter()
     }
 }
-
-/// Is a chunk shared on the network.
-pub struct NetChunk {
-    data: Vec<u8>,
-    crc: u32,
-}
