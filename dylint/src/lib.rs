@@ -44,7 +44,7 @@ pub fn register_lints(_sess: &rustc_session::Session, lint_store: &mut rustc_lin
         driver_clone::DRIVER_CLONE,
         from_variable_value::FROM_VARIABLE_VALUE,
         impl_deref::IMPL_DEREF,
-        impl_for_collection::IMPL_FOR_COLLECTION,
+        // impl_for_collection::IMPL_FOR_COLLECTION,
         impl_from_collection::IMPL_FROM_COLLECTION,
         impl_iterator_stream::IMPL_ITERATOR_STREAM,
         one_letter_variable::ONE_LETTER_VARIABLE,
@@ -58,7 +58,7 @@ pub fn register_lints(_sess: &rustc_session::Session, lint_store: &mut rustc_lin
     lint_store.register_late_pass(|| Box::new(driver_clone::DriverClone));
     lint_store.register_late_pass(|| Box::new(from_variable_value::FromVariableValue));
     lint_store.register_late_pass(|| Box::new(impl_deref::ImplDeref));
-    lint_store.register_late_pass(|| Box::new(impl_for_collection::ImplForCollection));
+    // lint_store.register_late_pass(|| Box::new(impl_for_collection::ImplForCollection));
     lint_store.register_late_pass(|| Box::new(impl_from_collection::ImplFromCollection));
     lint_store.register_late_pass(|| Box::new(impl_iterator_stream::ImplIteratorStream));
     lint_store.register_late_pass(|| Box::new(one_letter_variable::OneLetterVariable));

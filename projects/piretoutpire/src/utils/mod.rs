@@ -1,1 +1,5 @@
-pub mod div;
+mod div;
+pub use div::div_ceil;
+
+mod raw_array;
+pub use raw_array::{u32_to_u8_array, u8_array_to_u32};

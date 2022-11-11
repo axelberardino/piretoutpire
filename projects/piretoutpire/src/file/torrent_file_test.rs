@@ -5,7 +5,7 @@ use crate::file::file_chunk::{FileChunk, FileFixedSizedChunk};
 fn test_create_metadata_from_one_chunk_file() -> AnyResult<()> {
     let tmp_file = temp_file::empty();
     let data: Vec<u8> = vec![0, 1, 2, 3, 4];
-    let mut fc = FileChunk::open_new(tmp_file.path(), data.len() as u64).expect("file must exists!");
+    let mut fc = FileChunk::open_new(tmp_file.path(), data.len() as u32).expect("file must exists!");
     fc.write_chunk(0, &data)?;
 
     let tmp_torrent_file = temp_file::empty();
@@ -23,9 +23,9 @@ fn test_create_metadata_from_many_chunks_file() -> AnyResult<()> {
     let tmp_file = temp_file::empty();
     let data: Vec<u8> = vec![0, 1, 2, 3, 4];
     let mut fc =
-        FileFixedSizedChunk::<1>::open_new(tmp_file.path(), data.len() as u64).expect("file must exists!");
+        FileFixedSizedChunk::<1>::open_new(tmp_file.path(), data.len() as u32).expect("file must exists!");
     for (idx, item) in data.iter().enumerate() {
-        fc.write_chunk(idx as u64, &[*item])?;
+        fc.write_chunk(idx as u32, &[*item])?;
     }
 
     let tmp_torrent_file = temp_file::empty();
@@ -54,7 +54,7 @@ fn test_reload_existing_torrent() -> AnyResult<()> {
 
     {
         let data: Vec<u8> = vec![0, 1, 2, 3, 4];
-        let mut fc = FileChunk::open_new(tmp_file.path(), data.len() as u64).expect("file must exists!");
+        let mut fc = FileChunk::open_new(tmp_file.path(), data.len() as u32).expect("file must exists!");
         fc.write_chunk(0, &data)?;
 
         _ = TorrentFile::new(tmp_torrent_file.path(), tmp_file.path())?;
@@ -76,7 +76,7 @@ fn test_reload_existing_torrent_but_not_found_associated_file() -> AnyResult<()>
     {
         let tmp_file = temp_file::empty();
         let data: Vec<u8> = vec![0, 1, 2, 3, 4];
-        let mut fc = FileChunk::open_new(tmp_file.path(), data.len() as u64).expect("file must exists!");
+        let mut fc = FileChunk::open_new(tmp_file.path(), data.len() as u32).expect("file must exists!");
         fc.write_chunk(0, &data)?;
 
         _ = TorrentFile::new(tmp_torrent_file.path(), tmp_file.path())?;
@@ -95,7 +95,7 @@ fn test_reload_existing_torrent_but_invalid_crc_file() -> AnyResult<()> {
 
     {
         let data: Vec<u8> = vec![0, 1, 2, 3, 4];
-        let mut fc = FileChunk::open_new(tmp_file.path(), data.len() as u64).expect("file must exists!");
+        let mut fc = FileChunk::open_new(tmp_file.path(), data.len() as u32).expect("file must exists!");
         fc.write_chunk(0, &data)?;
 
         _ = TorrentFile::new(tmp_torrent_file.path(), tmp_file.path())?;

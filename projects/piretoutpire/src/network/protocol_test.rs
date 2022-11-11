@@ -1,33 +1,33 @@
 use super::*;
+use crate::file::file_chunk::DEFAULT_CHUNK_SIZE;
+use errors::AnyResult;
 
 #[test]
-fn test_convert_u32_to_u8() {
-    assert_eq!([0, 0, 0, 0], u32_to_u8_array(0));
-    assert_eq!([0, 0, 0, 1], u32_to_u8_array(1));
-    assert_eq!([0, 0, 0, 255], u32_to_u8_array(255));
+fn test_file_info_protocol() -> AnyResult<()> {
+    let file_info = FileInfo {
+        file_size: 1234,
+        chunk_size: DEFAULT_CHUNK_SIZE,
+        file_crc: 3613099103,
+        original_filename: "my_file.txt".to_owned(),
+    };
 
-    assert_eq!([0, 0, 1, 0], u32_to_u8_array(256));
-    assert_eq!([0, 0, 255, 255], u32_to_u8_array(65535));
-    assert_eq!([0, 1, 0, 0], u32_to_u8_array(65536));
+    let raw_buf: Vec<u8> = file_info.into();
+    let raw_buf = raw_buf.as_slice();
+    #[rustfmt::skip]
+    assert_eq!(&[
+            0, 0, 4, 210,
+            0, 0, 0, 2,
+            215, 91, 132, 95,
+            109, 121, 95, 102, 105, 108, 101, 46, 116, 120, 116
+        ],
+        raw_buf
+    );
 
-    assert_eq!([0, 255, 255, 255], u32_to_u8_array(16777215));
-    assert_eq!([1, 0, 0, 0], u32_to_u8_array(16777216));
+    let decoded_file_info = FileInfo::try_from(raw_buf)?;
+    assert_eq!(1234, decoded_file_info.file_size);
+    assert_eq!(DEFAULT_CHUNK_SIZE, decoded_file_info.chunk_size);
+    assert_eq!(3613099103, decoded_file_info.file_crc);
+    assert_eq!("my_file.txt".to_owned(), decoded_file_info.original_filename);
 
-    assert_eq!([255, 255, 255, 255], u32_to_u8_array(4294967295));
-}
-
-#[test]
-fn test_convert_u8_to_u32() {
-    assert_eq!(0, u8_array_to_u32(&[0, 0, 0, 0]));
-    assert_eq!(1, u8_array_to_u32(&[0, 0, 0, 1]));
-    assert_eq!(255, u8_array_to_u32(&[0, 0, 0, 255]));
-
-    assert_eq!(256, u8_array_to_u32(&[0, 0, 1, 0]));
-    assert_eq!(65535, u8_array_to_u32(&[0, 0, 255, 255]));
-    assert_eq!(65536, u8_array_to_u32(&[0, 1, 0, 0]));
-
-    assert_eq!(16777215, u8_array_to_u32(&[0, 255, 255, 255]));
-    assert_eq!(16777216, u8_array_to_u32(&[1, 0, 0, 0]));
-
-    assert_eq!(4294967295, u8_array_to_u32(&[255, 255, 255, 255]));
+    Ok(())
 }

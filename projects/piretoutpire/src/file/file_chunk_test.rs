@@ -4,7 +4,7 @@ use super::*;
 fn test_read_one_big_chunk() -> AnyResult<()> {
     let tmp_file = temp_file::empty();
     let data: Vec<u8> = vec![0, 1, 2, 3, 4];
-    let mut fc = FileChunk::open_new(tmp_file.path(), data.len() as u64).expect("file must exists!");
+    let mut fc = FileChunk::open_new(tmp_file.path(), data.len() as u32).expect("file must exists!");
 
     fc.write_chunk(0, &data)?;
     let got = fc.read_chunk(0)?;
@@ -18,14 +18,14 @@ fn test_read_no_remains_chunks() -> AnyResult<()> {
     let tmp_file = temp_file::empty();
     let data: Vec<u8> = vec![0, 1, 2, 3, 4];
     let mut fc =
-        FileFixedSizedChunk::<1>::open_new(tmp_file.path(), data.len() as u64).expect("file must exists!");
+        FileFixedSizedChunk::<1>::open_new(tmp_file.path(), data.len() as u32).expect("file must exists!");
 
     for (idx, item) in data.iter().enumerate() {
-        fc.write_chunk(idx as u64, &[*item])?;
+        fc.write_chunk(idx as u32, &[*item])?;
     }
 
     for (idx, expected) in data.iter().enumerate() {
-        let got = fc.read_chunk(idx as u64)?;
+        let got = fc.read_chunk(idx as u32)?;
         assert_eq!(vec![*expected], got);
     }
 
@@ -37,7 +37,7 @@ fn test_read_with_remains_chunks() -> AnyResult<()> {
     let tmp_file = temp_file::empty();
     let data: Vec<u8> = vec![0, 1, 2, 3, 4];
     let mut fc =
-        FileFixedSizedChunk::<2>::open_new(tmp_file.path(), data.len() as u64).expect("file must exists!");
+        FileFixedSizedChunk::<2>::open_new(tmp_file.path(), data.len() as u32).expect("file must exists!");
 
     fc.write_chunk(0, &data[0..2])?;
     fc.write_chunk(1, &data[2..4])?;
@@ -56,7 +56,7 @@ fn test_read_existing_file() -> AnyResult<()> {
     let data: Vec<u8> = vec![0, 1, 2, 3, 4];
 
     {
-        let mut fc = FileChunk::open_new(tmp_file.path(), data.len() as u64).expect("file must exists!");
+        let mut fc = FileChunk::open_new(tmp_file.path(), data.len() as u32).expect("file must exists!");
         fc.write_chunk(0, &data)?;
     }
 
@@ -88,7 +88,7 @@ fn test_invalid_init() -> AnyResult<()> {
 fn test_invalid_chunk_index() -> AnyResult<()> {
     let tmp_file = temp_file::empty();
     let data: Vec<u8> = vec![0, 1, 2, 3, 4];
-    let mut fc = FileChunk::open_new(tmp_file.path(), data.len() as u64).expect("file must exists!");
+    let mut fc = FileChunk::open_new(tmp_file.path(), data.len() as u32).expect("file must exists!");
 
     let res = fc.write_chunk(42, &data);
     assert!(res.is_err());

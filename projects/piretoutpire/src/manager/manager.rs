@@ -25,7 +25,7 @@ pub struct Manager {
 
 pub struct Context {
     // Realtime list of peers
-    pub peers: HashMap<u32, SocketAddr>,
+    pub peers: HashMap<u32, SocketAddr>, // TODO: DHT
 
     // List of all available torrents currently owned, or currently downloading.
     pub available_torrents: HashMap<u32 /*crc*/, (TorrentFile<String> /*metadata*/, FileChunk /*file*/)>,
@@ -139,6 +139,7 @@ async fn apply_command(
     command: Command,
 ) -> AnyResult<()> {
     match command {
+        // Message handling
         Command::Handshake(crc) => {
             eprintln!("handshake, ask for crc {}", crc);
         }
@@ -153,7 +154,7 @@ async fn apply_command(
                         if chunk_id as usize >= torrent.metadata.completed_chunks.len() {
                             Command::ErrorOccured(ErrorCode::InvalidChunk).into()
                         } else {
-                            match chunks.read_chunk(chunk_id as u64) {
+                            match chunks.read_chunk(chunk_id) {
                                 Ok(chunk) => Command::SendChunk(crc, chunk_id, chunk).into(),
                                 Err(_) => Command::ErrorOccured(ErrorCode::ChunkNotFound).into(),
                             }
@@ -177,12 +178,15 @@ async fn apply_command(
                     } else {
                         // Update metadata and write local chunk.
                         torrent.metadata.completed_chunks[chunk_id as usize] = Some(0);
-                        chunks.write_chunk(chunk_id as u64, raw_chunk.as_slice())?;
+                        chunks.write_chunk(chunk_id, raw_chunk.as_slice())?;
                     }
                 }
                 None => eprintln!("Got chunk for an unknown file"),
             }
         }
+        Command::FileInfo(_) => todo!(),
+
+        // Error handling
         Command::ErrorOccured(ErrorCode::FileNotFound) => eprintln!("peer don't have this file"),
         Command::ErrorOccured(ErrorCode::ChunkNotFound) => eprintln!("peer don't have this chunk"),
         Command::ErrorOccured(ErrorCode::InvalidChunk) => eprintln!("peer said chunk was invalid"),

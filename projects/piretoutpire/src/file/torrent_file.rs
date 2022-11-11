@@ -1,5 +1,5 @@
 use super::file_chunk::{FileFixedSizedChunk, DEFAULT_CHUNK_SIZE};
-use crate::utils::div::div_ceil;
+use crate::utils::div_ceil;
 use crc32fast::Hasher;
 use errors::{bail, reexports::eyre::ContextCompat, AnyResult};
 use serde::{Deserialize, Serialize};
@@ -23,7 +23,7 @@ impl<P: AsRef<Path>> TorrentFile<P> {
         Self::new_with_chunk_size::<DEFAULT_CHUNK_SIZE>(torrent_file, original_file)
     }
 
-    pub fn new_with_chunk_size<const CHUNK_SIZE: u64>(torrent_file: P, original_file: P) -> AnyResult<Self> {
+    pub fn new_with_chunk_size<const CHUNK_SIZE: u32>(torrent_file: P, original_file: P) -> AnyResult<Self> {
         let torrent = Self {
             torrent_file,
             metadata: Metadata::extract_from_file::<P, CHUNK_SIZE>(original_file)?,
@@ -73,9 +73,9 @@ impl<P: AsRef<Path>> TorrentFile<P> {
     pub fn preallocate(
         torrent_file: P,
         original_filename: String,
-        file_size: u64,
+        file_size: u32,
         file_crc: u32,
-        chunk_size: u64,
+        chunk_size: u32,
     ) -> Self {
         Self {
             metadata: Metadata {
@@ -101,9 +101,9 @@ impl<P: AsRef<Path>> TorrentFile<P> {
 pub struct Metadata {
     pub original_filename: String,
     pub original_file: String,
-    pub file_size: u64,
+    pub file_size: u32,
     pub file_crc: u32,
-    pub chunk_size: u64,
+    pub chunk_size: u32,
     // contains none for incomplete chunks
     // contains the crc of already got chunks
     pub completed_chunks: Vec<Option<u32>>,
@@ -111,7 +111,7 @@ pub struct Metadata {
 
 impl Metadata {
     // Load a file and create all in-memory metadata for this file.
-    fn extract_from_file<P: AsRef<Path>, const CHUNK_SIZE: u64>(original_file: P) -> AnyResult<Self> {
+    fn extract_from_file<P: AsRef<Path>, const CHUNK_SIZE: u32>(original_file: P) -> AnyResult<Self> {
         let mut chunks = FileFixedSizedChunk::<CHUNK_SIZE>::open_existing(&original_file)?;
         let mut whole_file_hasher = Hasher::new();
         let mut completed_chunks = vec![None; chunks.nb_chunks() as usize];
