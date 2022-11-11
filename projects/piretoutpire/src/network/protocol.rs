@@ -26,6 +26,10 @@ pub enum Command {
     GetChunk(u32, u32),           // 0x02, crc, chunk_id
     SendChunk(u32, u32, Vec<u8>), // 0x03, crc, chunk_id, chunk
     FileInfo(FileInfo),           // 0x04, FileInfo
+
+    // FindNode(u32), // 0x05 crc
+    // GetPeers(), // 0x06 ?
+    // SeendPeers(), // 0x07 ?
 }
 // TODO send host:port list ^
 

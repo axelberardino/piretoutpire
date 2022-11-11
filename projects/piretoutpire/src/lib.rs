@@ -1,3 +1,4 @@
+pub mod dht;
 pub mod file;
 pub mod manager;
 pub mod network;

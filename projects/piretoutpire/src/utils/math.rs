@@ -4,6 +4,12 @@ pub const fn div_ceil(a: u32, b: u32) -> u32 {
     (a + b - 1) / b
 }
 
+// Compute the distance between 2 crc/id.
+// It's done by using a xor.
+pub const fn distance(a: u32, b: u32) -> u32 {
+    a ^ b
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
