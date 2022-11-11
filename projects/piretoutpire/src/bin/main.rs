@@ -41,11 +41,11 @@ async fn main() -> AnyResult<()> {
     };
     match connection_type {
         ConnectionType::Seeder => {
-            let mut manager = Manager::new("127.0.0.1:4000".parse()?);
+            let mut manager = Manager::new("127.0.0.1:4000".parse()?, "/tmp/seeder".to_owned());
             manager.share_existing_file("/tmp/toto.txt").await?;
         }
         ConnectionType::Leecher => {
-            let mut manager = Manager::new("127.0.0.1:4001".parse()?);
+            let mut manager = Manager::new("127.0.0.1:4001".parse()?, "/tmp/leecher".to_owned());
             manager.download_file(3613099103).await?;
         }
     }

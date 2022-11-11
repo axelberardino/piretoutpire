@@ -3,7 +3,7 @@ use crate::{
         file_chunk::{FileChunk, DEFAULT_CHUNK_SIZE},
         torrent_file::TorrentFile,
     },
-    network::protocol::{Command, ErrorCode},
+    network::protocol::{Command, ErrorCode, FileInfo},
 };
 use errors::{bail, AnyResult};
 use std::{
@@ -29,23 +29,27 @@ pub struct Context {
 
     // List of all available torrents currently owned, or currently downloading.
     pub available_torrents: HashMap<u32 /*crc*/, (TorrentFile<String> /*metadata*/, FileChunk /*file*/)>,
+
+    // Where all torrents and their metadata are.
+    pub working_directory: String,
 }
 
 impl Context {
-    pub fn new() -> Self {
+    pub fn new(working_directory: String) -> Self {
         Self {
             peers: HashMap::new(),
             available_torrents: HashMap::new(),
+            working_directory,
         }
     }
 }
 
 impl Manager {
     // Expect an address like: "127.0.0.1:8080".parse()
-    pub fn new(addr: SocketAddr) -> Self {
+    pub fn new(addr: SocketAddr, working_directory: String) -> Self {
         Self {
             addr,
-            ctx: Arc::new(Mutex::new(Context::new())),
+            ctx: Arc::new(Mutex::new(Context::new(working_directory))),
         }
     }
 
@@ -142,6 +146,25 @@ async fn apply_command(
         // Message handling
         Command::Handshake(crc) => {
             eprintln!("handshake, ask for crc {}", crc);
+            let response: Vec<u8> = {
+                let mut guard = ctx.lock().expect("invalid mutex");
+                let ctx = guard.deref_mut();
+
+                match ctx.available_torrents.get(&crc) {
+                    Some((torrent, _)) => {
+                        let file_info = FileInfo {
+                            file_size: torrent.metadata.file_size,
+                            chunk_size: torrent.metadata.chunk_size,
+                            file_crc: torrent.metadata.file_crc,
+                            original_filename: torrent.metadata.original_filename.clone(),
+                        };
+                        Command::FileInfo(file_info).into()
+                    }
+                    None => Command::ErrorOccured(ErrorCode::FileNotFound).into(),
+                }
+            };
+            eprintln!("sending buf {:?}", &response);
+            writer.write_all(response.as_slice()).await?;
         }
         Command::GetChunk(crc, chunk_id) => {
             eprintln!("applying get_chunk {}", chunk_id);
@@ -184,7 +207,36 @@ async fn apply_command(
                 None => eprintln!("Got chunk for an unknown file"),
             }
         }
-        Command::FileInfo(_) => todo!(),
+        Command::FileInfo(file_info) => {
+            eprintln!("received file_info {:?}", &file_info);
+            let mut guard = ctx.lock().expect("invalid mutex");
+            let ctx = guard.deref_mut();
+
+            match ctx.available_torrents.entry(file_info.file_crc) {
+                std::collections::hash_map::Entry::Occupied(entry) => {
+                    eprintln!("already got the asked torrent {}", entry.key())
+                }
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    let torrent = TorrentFile::preallocate(
+                        format!(
+                            "{}/{}.metadata",
+                            ctx.working_directory, file_info.original_filename
+                        ),
+                        file_info.original_filename.clone(),
+                        file_info.file_size,
+                        file_info.file_crc,
+                        file_info.chunk_size,
+                    );
+                    torrent.dump()?;
+                    let chunks = FileChunk::open_new(
+                        format!("{}/{}", ctx.working_directory, file_info.original_filename),
+                        file_info.file_size,
+                    )?;
+
+                    entry.insert((torrent, chunks));
+                }
+            }
+        }
 
         // Error handling
         Command::ErrorOccured(ErrorCode::FileNotFound) => eprintln!("peer don't have this file"),

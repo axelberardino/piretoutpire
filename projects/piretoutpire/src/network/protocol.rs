@@ -145,10 +145,10 @@ impl From<Command> for Vec<u8> {
 // Contains all metadata information about a given file.
 #[derive(Debug)]
 pub struct FileInfo {
-    file_size: u32,
-    chunk_size: u32,
-    file_crc: u32,
-    original_filename: String,
+    pub file_size: u32,
+    pub chunk_size: u32,
+    pub file_crc: u32,
+    pub original_filename: String,
 }
 
 // FileInfo Convert ------------------------------------------------------------
