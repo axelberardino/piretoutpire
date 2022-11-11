@@ -5,7 +5,7 @@ use crate::{
     },
     network::protocol::{Command, ErrorCode, FileInfo},
 };
-use errors::{bail, AnyResult};
+use errors::{bail, reexports::eyre::ContextCompat, AnyResult};
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -58,29 +58,33 @@ impl Manager {
         let ctx = Arc::clone(&self.ctx);
         // TODO ask for peers.
 
-        let file_size = 23;
-        let torrent = TorrentFile::preallocate(
-            "/tmp/mytorrent.metadata".to_string(),
-            "dl.txt".to_string(),
-            file_size,
-            crc,
-            DEFAULT_CHUNK_SIZE,
-        );
-        let chunks = FileChunk::open_new("/tmp/dl.txt", file_size)?;
-        let nb_chunks = chunks.nb_chunks();
+        // Get file info
         {
+            let client_addr: SocketAddr = "127.0.0.1:4000".parse()?;
+            let local_ctx = Arc::clone(&ctx);
+            let stream = TcpStream::connect(client_addr).await?;
+            get_file_info(local_ctx, stream, crc).await?;
+        }
+
+        // Get some info about what to download
+        let nb_chunks = {
             let mut guard = ctx.lock().expect("invalid mutex");
             let ctx = guard.deref_mut();
 
-            ctx.available_torrents.insert(crc, (torrent, chunks));
-        }
+            let (_, chunks) = ctx
+                .available_torrents
+                .get(&crc)
+                .context("unable to find associated chunks")?;
+
+            chunks.nb_chunks()
+        };
 
         for chunk_id in 0..nb_chunks {
             let local_ctx = Arc::clone(&ctx);
             let handle = tokio::spawn(async move {
                 let client_addr: SocketAddr = "127.0.0.1:4000".parse()?;
                 let stream = TcpStream::connect(client_addr).await?;
-                ask_for_chunk(local_ctx, stream, crc, chunk_id as u32).await
+                ask_for_chunk(local_ctx, stream, crc, chunk_id).await
             });
             handle.await??;
         }
@@ -268,6 +272,34 @@ async fn listen_to_command(ctx: Arc<Mutex<Context>>, mut stream: TcpStream) -> A
             Ok(command) => apply_command(Arc::clone(&ctx), &mut writer, command).await?,
             Err(err) => eprintln!("Unknown command received! {}", err),
         }
+    }
+
+    Ok(())
+}
+
+// Get file info from its ID (crc).
+// Start by sending a Handshake request, and received either an error code
+// or a FileInfo response.
+async fn get_file_info(ctx: Arc<Mutex<Context>>, mut stream: TcpStream, crc: u32) -> AnyResult<()> {
+    let peer_addr = stream.peer_addr()?;
+    eprintln!("Connecting to {}", peer_addr);
+    let (reader, writer) = stream.split();
+    let mut reader = tokio::io::BufReader::new(reader);
+    let mut writer = tokio::io::BufWriter::new(writer);
+
+    let buf: Vec<u8> = Command::Handshake(crc).into();
+    writer.write_all(buf.as_slice()).await?;
+    writer.flush().await?;
+
+    let raw_chunk = read_all!(reader);
+    let len = raw_chunk.len();
+    if len == 0 {
+        bail!("invalid buffer");
+    }
+
+    match raw_chunk.as_slice().try_into() {
+        Ok(command) => apply_command(Arc::clone(&ctx), &mut writer, command).await?,
+        Err(err) => eprintln!("Unknown command received! {}", err),
     }
 
     Ok(())
