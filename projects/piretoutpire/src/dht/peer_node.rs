@@ -5,7 +5,7 @@ use std::{
 };
 
 // Hold state about a peer in the routing table.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PeerNode {
     // Id of the peer
     id: u32,

@@ -1,5 +1,5 @@
 use super::peer_node::PeerNode;
-use crate::dht::peer_node::PeerStatus;
+use crate::{dht::peer_node::PeerStatus, utils::middle_point};
 use std::{cell::RefCell, rc::Rc};
 
 // Maximum nodes by bucket. Bittorent use 8.
@@ -90,24 +90,40 @@ impl BucketTree {
         }
 
         // Start by releasing all borrowed values.
-        let start = tree_node.start;
-        let end = tree_node.end;
+        let peer_id = peer_node.id();
         drop(tree_node);
 
         // Bucket is full, no other choice but to split it, and add the new
-        // value in one of it new children.
+        // value in one of its new children.
+        // The loop is there to handle the case where splitting a range give:
+        // One new node full + one new node empty. So we need to loop until it's
+        // resolved.
+        let mut rc_tree_node = Rc::clone(&rc_tree_node);
+        loop {
+            let (start, end) = {
+                let tree = rc_tree_node.borrow();
+                (tree.start, tree.end)
+            };
 
-        let (split, new_left, new_right) = split_node(Rc::clone(&rc_tree_node), start, end);
-        if peer_node.id() < split {
-            if let LeafOrChildren::Leaf(bucket) = &mut new_left.borrow_mut().children {
-                bucket.peers.push(peer_node);
-                bucket.peers.sort_by_key(|peer| peer.id());
+            let (split, new_left, new_right) = split_node(Rc::clone(&rc_tree_node), start, end);
+            let new_node = if peer_id < split { new_left } else { new_right };
+
+            let succeed = match &mut new_node.borrow_mut().children {
+                LeafOrChildren::Leaf(bucket) => {
+                    if bucket.peers.len() < BUCKET_SIZE {
+                        bucket.peers.push(peer_node.clone());
+                        bucket.peers.sort_by_key(|peer| peer.id());
+                        true
+                    } else {
+                        false
+                    }
+                }
+                LeafOrChildren::Children(_, _) => unreachable!(),
+            };
+            if succeed {
+                break;
             }
-        } else {
-            if let LeafOrChildren::Leaf(bucket) = &mut new_right.borrow_mut().children {
-                bucket.peers.push(peer_node);
-                bucket.peers.sort_by_key(|peer| peer.id());
-            }
+            rc_tree_node = new_node;
         }
 
         true
@@ -153,7 +169,7 @@ fn split_node(
         LeafOrChildren::Children(_, _) => unreachable!(),
     };
 
-    let split_on = (start + end) / 2;
+    let split_on = middle_point(start, end);
     let (left_peers, right_peers) = bucket
         .peers
         .drain(..)
