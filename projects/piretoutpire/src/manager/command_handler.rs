@@ -46,9 +46,9 @@ macro_rules! read_all {
 pub async fn apply_command(
     ctx: Arc<Mutex<Context>>,
     writer: &mut BufWriter<WriteHalf<'_>>,
-    command: Command,
+    request: Command,
 ) -> AnyResult<()> {
-    match command {
+    match request {
         // Message handling
         Command::Handshake(crc) => {
             eprintln!("handshake, ask for crc {}", crc);
@@ -106,7 +106,9 @@ pub async fn apply_command(
                         eprintln!("Invalid chunk_id {} for {}", chunk_id, crc);
                     } else {
                         // Update metadata and write local chunk.
-                        torrent.metadata.completed_chunks[chunk_id as usize] = Some(0);
+                        torrent.metadata.completed_chunks[chunk_id as usize] =
+                            Some(crc32fast::hash(&raw_chunk));
+                        torrent.dump()?;
                         chunks.write_chunk(chunk_id, raw_chunk.as_slice())?;
                     }
                 }
