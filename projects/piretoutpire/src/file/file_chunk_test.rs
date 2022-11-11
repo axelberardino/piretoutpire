@@ -4,7 +4,8 @@ use super::*;
 fn test_read_one_big_chunk() -> AnyResult<()> {
     let tmp_file = temp_file::empty();
     let data: Vec<u8> = vec![0, 1, 2, 3, 4];
-    let mut fc = FileChunk::open_new(tmp_file.path(), data.len() as u32).expect("file must exists!");
+    let mut fc = FileFixedSizedChunk::<65535>::open_new(tmp_file.path(), data.len() as u32)
+        .expect("file must exists!");
 
     fc.write_chunk(0, &data)?;
     let got = fc.read_chunk(0)?;
@@ -56,11 +57,12 @@ fn test_read_existing_file() -> AnyResult<()> {
     let data: Vec<u8> = vec![0, 1, 2, 3, 4];
 
     {
-        let mut fc = FileChunk::open_new(tmp_file.path(), data.len() as u32).expect("file must exists!");
+        let mut fc = FileFixedSizedChunk::<65535>::open_new(tmp_file.path(), data.len() as u32)
+            .expect("file must exists!");
         fc.write_chunk(0, &data)?;
     }
 
-    let mut fc = FileChunk::open_existing(tmp_file.path()).expect("file must exists!");
+    let mut fc = FileFixedSizedChunk::<65535>::open_existing(tmp_file.path()).expect("file must exists!");
     let got = fc.read_chunk(0)?;
     assert_eq!(data, got);
 
@@ -107,7 +109,7 @@ fn test_nb_chunks() -> AnyResult<()> {
     {
         let tmp_file = temp_file::empty();
         let fc = FileChunk::open_new(tmp_file.path(), 5).expect("file must exists!");
-        assert_eq!(1, fc.nb_chunks());
+        assert_eq!(div_ceil(5, DEFAULT_CHUNK_SIZE), fc.nb_chunks());
     }
     {
         let tmp_file = temp_file::empty();
