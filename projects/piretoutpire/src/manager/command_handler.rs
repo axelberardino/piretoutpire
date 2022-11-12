@@ -8,13 +8,11 @@ use crate::{
     read_all,
 };
 use errors::AnyResult;
-use std::{
-    ops::DerefMut,
-    sync::{Arc, Mutex},
-};
+use std::{ops::DerefMut, sync::Arc};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufWriter},
     net::{tcp::WriteHalf, TcpStream},
+    sync::Mutex,
 };
 
 // Command handler -------------------------------------------------------------
@@ -31,7 +29,7 @@ pub async fn apply_command(
         Command::Handshake(crc) => {
             eprintln!("handshake, ask for crc {}", crc);
             let response: Vec<u8> = {
-                let mut guard = ctx.lock().expect("invalid mutex");
+                let mut guard = ctx.lock().await;
                 let ctx = guard.deref_mut();
 
                 match ctx.available_torrents.get(&crc) {
@@ -53,7 +51,7 @@ pub async fn apply_command(
         Command::GetChunk(crc, chunk_id) => {
             eprintln!("applying get_chunk {}", chunk_id);
             let response: Vec<u8> = {
-                let mut guard = ctx.lock().expect("invalid mutex");
+                let mut guard = ctx.lock().await;
                 let ctx = guard.deref_mut();
 
                 match ctx.available_torrents.get_mut(&crc) {
@@ -75,7 +73,7 @@ pub async fn apply_command(
         }
         Command::SendChunk(crc, chunk_id, raw_chunk) => {
             eprintln!("received buf {:?}", &raw_chunk);
-            let mut guard = ctx.lock().expect("invalid mutex");
+            let mut guard = ctx.lock().await;
             let ctx = guard.deref_mut();
 
             match ctx.available_torrents.get_mut(&crc) {
@@ -95,7 +93,7 @@ pub async fn apply_command(
         }
         Command::FileInfo(file_info) => {
             eprintln!("received file_info {:?}", &file_info);
-            let mut guard = ctx.lock().expect("invalid mutex");
+            let mut guard = ctx.lock().await;
             let ctx = guard.deref_mut();
 
             match ctx.available_torrents.entry(file_info.file_crc) {
@@ -166,9 +164,14 @@ pub async fn listen_to_command(ctx: Arc<Mutex<Context>>, mut stream: TcpStream) 
 // Get file info from its ID (crc).
 // Start by sending a Handshake request, and received either an error code
 // or a FileInfo response.
-pub async fn get_file_info(ctx: Arc<Mutex<Context>>, stream: TcpStream, crc: u32) -> AnyResult<()> {
-    let (mut stream, command) = handshake(stream, crc).await?;
-    let (_, writer) = stream.split();
+pub async fn get_file_info(
+    ctx: Arc<Mutex<Context>>,
+    stream: Arc<Mutex<TcpStream>>,
+    crc: u32,
+) -> AnyResult<()> {
+    let command = handshake(Arc::clone(&stream), crc).await?;
+    let mut guard = stream.lock().await;
+    let (_, writer) = guard.split();
     let mut writer = tokio::io::BufWriter::new(writer);
     apply_command(Arc::clone(&ctx), &mut writer, command).await
 }
@@ -178,12 +181,13 @@ pub async fn get_file_info(ctx: Arc<Mutex<Context>>, stream: TcpStream, crc: u32
 // or the chunk as a raw buffer.
 pub async fn ask_for_chunk(
     ctx: Arc<Mutex<Context>>,
-    stream: TcpStream,
+    stream: Arc<Mutex<TcpStream>>,
     crc: u32,
     chunk_id: u32,
 ) -> AnyResult<()> {
-    let (mut stream, command) = get_chunk(stream, crc, chunk_id).await?;
-    let (_, writer) = stream.split();
+    let command = get_chunk(Arc::clone(&stream), crc, chunk_id).await?;
+    let mut guard = stream.lock().await;
+    let (_, writer) = guard.split();
     let mut writer = tokio::io::BufWriter::new(writer);
     apply_command(Arc::clone(&ctx), &mut writer, command).await
 }

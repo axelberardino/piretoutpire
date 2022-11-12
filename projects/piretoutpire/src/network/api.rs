@@ -1,8 +1,10 @@
 use super::protocol::Command;
 use errors::{bail, AnyResult};
+use std::sync::Arc;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
+    sync::Mutex,
 };
 
 // UTILS -----------------------------------------------------------------------
@@ -35,8 +37,9 @@ macro_rules! read_all {
 
 // Send a raw request u8 encoded, and wait for a respone.
 // Return a raw buffer which must be interpreted.
-pub async fn send_raw_unary(mut stream: TcpStream, request: &[u8]) -> AnyResult<(TcpStream, Vec<u8>)> {
-    let (reader, writer) = stream.split();
+pub async fn send_raw_unary(stream: Arc<Mutex<TcpStream>>, request: &[u8]) -> AnyResult<Vec<u8>> {
+    let mut guard = stream.lock().await;
+    let (reader, writer) = guard.split();
     let mut reader = tokio::io::BufReader::new(reader);
     let mut writer = tokio::io::BufWriter::new(writer);
 
@@ -49,33 +52,33 @@ pub async fn send_raw_unary(mut stream: TcpStream, request: &[u8]) -> AnyResult<
         bail!("invalid buffer");
     }
 
-    Ok((stream, raw_chunk))
+    Ok(raw_chunk)
 }
 
 // API -------------------------------------------------------------------------
 // All unary send a request and handle the response in the command handler.
 
 // Ask for a chunk of a given file by its id.
-pub async fn get_chunk(stream: TcpStream, crc: u32, chunk_id: u32) -> AnyResult<(TcpStream, Command)> {
+pub async fn get_chunk(stream: Arc<Mutex<TcpStream>>, crc: u32, chunk_id: u32) -> AnyResult<Command> {
     let request: Vec<u8> = Command::GetChunk(crc, chunk_id).into();
-    let (stream, raw_response) = send_raw_unary(stream, request.as_slice()).await?;
-    Ok((stream, raw_response.as_slice().try_into()?))
+    let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+    raw_response.as_slice().try_into()
 }
 
 // Ask for a chunk of a given file by its id.
-pub async fn handshake(stream: TcpStream, crc: u32) -> AnyResult<(TcpStream, Command)> {
+pub async fn handshake(stream: Arc<Mutex<TcpStream>>, crc: u32) -> AnyResult<Command> {
     let request: Vec<u8> = Command::Handshake(crc).into();
-    let (stream, raw_response) = send_raw_unary(stream, request.as_slice()).await?;
-    Ok((stream, raw_response.as_slice().try_into()?))
-}
-
-// Get file info from its ID (crc).
-// Start by sending a Handshake request, and received either an error code
-// or a FileInfo response.
-pub async fn find_node(stream: TcpStream, sender: u32, target: u32) -> AnyResult<()> {
-    let request: Vec<u8> = Command::FindNodeRequest(sender, target).into();
     let raw_response = send_raw_unary(stream, request.as_slice()).await?;
-
-    // FIXME handle response
-    Ok(())
+    raw_response.as_slice().try_into()
 }
+
+// // Get file info from its ID (crc).
+// // Start by sending a Handshake request, and received either an error code
+// // or a FileInfo response.
+// pub async fn find_node(stream: TcpStream, sender: u32, target: u32) -> AnyResult<()> {
+//     let request: Vec<u8> = Command::FindNodeRequest(sender, target).into();
+//     let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+
+//     // FIXME handle response
+//     Ok(())
+// }

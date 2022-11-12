@@ -4,13 +4,11 @@ use super::{
 };
 use crate::file::{file_chunk::FileChunk, torrent_file::TorrentFile};
 use errors::{reexports::eyre::ContextCompat, AnyResult};
-use std::{
-    net::SocketAddr,
-    ops::DerefMut,
-    path::Path,
-    sync::{Arc, Mutex},
+use std::{net::SocketAddr, ops::DerefMut, path::Path, sync::Arc};
+use tokio::{
+    net::{TcpListener, TcpStream},
+    sync::Mutex,
 };
-use tokio::net::{TcpListener, TcpStream};
 
 pub struct Manager {
     addr: SocketAddr,
@@ -35,13 +33,13 @@ impl Manager {
         {
             let client_addr: SocketAddr = "127.0.0.1:4000".parse()?;
             let local_ctx = Arc::clone(&ctx);
-            let stream = TcpStream::connect(client_addr).await?;
+            let stream = Arc::new(Mutex::new(TcpStream::connect(client_addr).await?));
             get_file_info(local_ctx, stream, crc).await?;
         }
 
         // Get some info about what to download
         let nb_chunks = {
-            let mut guard = ctx.lock().expect("invalid mutex");
+            let mut guard = ctx.lock().await;
             let ctx = guard.deref_mut();
 
             let (_, chunks) = ctx
@@ -52,14 +50,17 @@ impl Manager {
             chunks.nb_chunks()
         };
 
-        for chunk_id in 0..nb_chunks {
-            let local_ctx = Arc::clone(&ctx);
-            let handle = tokio::spawn(async move {
-                let client_addr: SocketAddr = "127.0.0.1:4000".parse()?;
-                let stream = TcpStream::connect(client_addr).await?;
-                ask_for_chunk(local_ctx, stream, crc, chunk_id).await
-            });
-            handle.await??;
+        {
+            let client_addr: SocketAddr = "127.0.0.1:4000".parse()?;
+            let stream = Arc::new(Mutex::new(TcpStream::connect(client_addr).await?));
+            for chunk_id in 0..nb_chunks {
+                let local_ctx = Arc::clone(&ctx);
+                let stream = Arc::clone(&stream);
+
+                let handle =
+                    tokio::spawn(async move { ask_for_chunk(local_ctx, stream, crc, chunk_id).await });
+                handle.await??;
+            }
         }
 
         // self.start_stream().await?;
@@ -74,7 +75,7 @@ impl Manager {
         )?;
         let chunks = FileChunk::open_existing(&torrent.metadata.original_file)?;
         {
-            let mut ctx = self.ctx.lock().expect("invalid mutex");
+            let mut ctx = self.ctx.lock().await;
             ctx.available_torrents
                 .insert(torrent.metadata.file_crc, (torrent, chunks));
         }
