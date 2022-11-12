@@ -1,6 +1,7 @@
 use super::peer_node::PeerNode;
 use crate::{dht::peer_node::PeerStatus, utils::middle_point};
-use std::{cell::RefCell, rc::Rc};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 // Maximum nodes by bucket. Bittorent use 8.
 const BUCKET_SIZE: usize = 4;
@@ -30,7 +31,9 @@ const BUCKET_SIZE: usize = 4;
 // values close to 0.
 #[derive(Debug)]
 pub struct BucketTree {
-    root: Rc<RefCell<TreeNode>>,
+    // Rc<RefCell<TreeNode>> would have been enough, but this dataset is used in
+    // an async environment. So arc/mutex it is :(.
+    root: Arc<Mutex<TreeNode>>,
 }
 
 #[derive(Debug)]
@@ -46,7 +49,7 @@ pub struct TreeNode {
 #[derive(Debug)]
 enum LeafOrChildren {
     Leaf(Bucket),
-    Children(Rc<RefCell<TreeNode>>, Bucket),
+    Children(Arc<Mutex<TreeNode>>, Bucket),
 }
 
 #[derive(Debug)]
@@ -62,7 +65,7 @@ impl BucketTree {
     // Initialize a new tree.
     pub fn new() -> Self {
         Self {
-            root: Rc::new(RefCell::new(TreeNode {
+            root: Arc::new(Mutex::new(TreeNode {
                 start: 0,
                 end: u32::MAX,
                 children: LeafOrChildren::Leaf(Bucket {
@@ -74,9 +77,9 @@ impl BucketTree {
 
     // Add a new peer info into the tree.
     // Returns if an insertion has been made.
-    pub fn add_peer_node(&mut self, peer_node: PeerNode) -> bool {
-        let rc_tree_node = self.find_leaf(peer_node.id());
-        let mut tree_node = rc_tree_node.borrow_mut();
+    pub async fn add_peer_node(&mut self, peer_node: PeerNode) -> bool {
+        let rc_tree_node = self.find_leaf(peer_node.id()).await;
+        let mut tree_node = rc_tree_node.lock().await;
         debug_assert!(peer_node.id() >= tree_node.start);
         debug_assert!(peer_node.id() < tree_node.end);
         let (bucket, right_leaf) = match &mut tree_node.children {
@@ -121,17 +124,17 @@ impl BucketTree {
         // The loop is there to handle the case where splitting a range give:
         // One new node full + one new node empty. So we need to loop until it's
         // resolved.
-        let mut rc_tree_node = Rc::clone(&rc_tree_node);
+        let mut rc_tree_node = Arc::clone(&rc_tree_node);
         loop {
             let (start, end) = {
-                let tree = rc_tree_node.borrow();
+                let tree = rc_tree_node.lock().await;
                 (tree.start, tree.end)
             };
 
-            let (split, new_left, new_right) = split_node(Rc::clone(&rc_tree_node), start, end);
+            let (split, new_left, new_right) = split_node(Arc::clone(&rc_tree_node), start, end).await;
             let new_node = if peer_id < split { new_left } else { new_right };
 
-            let succeed = match &mut new_node.borrow_mut().children {
+            let succeed = match &mut new_node.lock().await.children {
                 LeafOrChildren::Leaf(bucket) => {
                     if bucket.peers.len() < BUCKET_SIZE {
                         bucket.peers.push(peer_node.clone());
@@ -151,78 +154,87 @@ impl BucketTree {
                     }
                 }
             };
+
             if succeed {
                 return true;
             }
             if end - start <= BUCKET_SIZE as u32 {
                 return false;
             }
+
             rc_tree_node = new_node;
         }
     }
 
     // Search the closest peers
-    pub fn search_closest_peers(&self, nb: usize) -> Vec<PeerNode> {
+    pub async fn search_closest_peers(&self, nb: usize) -> impl Iterator<Item = PeerNode> {
         let mut queue = Vec::new();
         let mut res = Vec::new();
-        queue.push(Rc::clone(&self.root));
+        queue.push(Arc::clone(&self.root));
         while let Some(rc_tree_node) = queue.pop() {
-            let tree_node = rc_tree_node.borrow();
+            let tree_node = rc_tree_node.lock().await;
             match &tree_node.children {
                 LeafOrChildren::Leaf(bucket) => {
                     res.extend(bucket.peers.iter().map(Clone::clone).collect::<Vec<_>>());
                     if res.len() >= nb {
-                        return res;
+                        return res.into_iter();
                     }
                 }
                 LeafOrChildren::Children(rc_left, bucket) => {
                     res.extend(bucket.peers.iter().map(Clone::clone).collect::<Vec<_>>());
                     if res.len() >= nb {
-                        return res;
+                        return res.into_iter();
                     }
-                    queue.push(Rc::clone(rc_left));
+                    queue.push(Arc::clone(rc_left));
                 }
             }
         }
 
-        res
+        res.into_iter()
+    }
+
+    // Return all contained peers.
+    pub async fn get_all_peers(&self) -> impl Iterator<Item = PeerNode> {
+        self.search_closest_peers(usize::MAX).await
     }
 }
 
 // Private methods.
 impl BucketTree {
     // Search the corresponding leaf.
-    fn find_leaf(&self, id: u32) -> Rc<RefCell<TreeNode>> {
-        fn rec_find_leaf(rc_bucket_tree: Rc<RefCell<TreeNode>>, id: u32) -> Rc<RefCell<TreeNode>> {
-            let bucket_tree = rc_bucket_tree.borrow();
-            debug_assert!(id >= bucket_tree.start);
-            debug_assert!(id < bucket_tree.end);
-
-            match &bucket_tree.children {
-                LeafOrChildren::Leaf(_) => Rc::clone(&rc_bucket_tree),
+    async fn find_leaf(&self, id: u32) -> Arc<Mutex<TreeNode>> {
+        let mut queue = Vec::new();
+        queue.push(Arc::clone(&self.root));
+        while let Some(rc_tree_node) = queue.pop() {
+            let tree_node = rc_tree_node.lock().await;
+            match &tree_node.children {
+                LeafOrChildren::Leaf(_) => {
+                    return Arc::clone(&rc_tree_node);
+                }
                 LeafOrChildren::Children(rc_left, _) => {
-                    let left = rc_left.borrow();
+                    let left = rc_left.lock().await;
                     if id < left.end {
-                        rec_find_leaf(Rc::clone(rc_left), id)
+                        queue.push(Arc::clone(rc_left));
                     } else {
-                        Rc::clone(&rc_bucket_tree)
+                        return Arc::clone(&rc_tree_node);
                     }
                 }
             }
         }
-        rec_find_leaf(Rc::clone(&self.root), id)
+
+        unreachable!()
     }
 }
 
 // Split an existing node in two. Cut the given range in half and move peers in
 // left or right bucket.
 // Return the value on which to split, and the left and right node created.
-fn split_node(
-    rc_bucket_node: Rc<RefCell<TreeNode>>,
+async fn split_node(
+    rc_bucket_node: Arc<Mutex<TreeNode>>,
     start: u32,
     end: u32,
-) -> (u32, Rc<RefCell<TreeNode>>, Rc<RefCell<TreeNode>>) {
-    let mut bucket_node = rc_bucket_node.borrow_mut();
+) -> (u32, Arc<Mutex<TreeNode>>, Arc<Mutex<TreeNode>>) {
+    let mut bucket_node = rc_bucket_node.lock().await;
     let bucket = match &mut bucket_node.children {
         LeafOrChildren::Leaf(bucket) => bucket,
         LeafOrChildren::Children(_, _) => unreachable!(),
@@ -241,16 +253,16 @@ fn split_node(
             acc
         });
 
-    let left = Rc::new(RefCell::new(TreeNode {
+    let left = Arc::new(Mutex::new(TreeNode {
         start,
         end: split_on,
         children: LeafOrChildren::Leaf(Bucket { peers: left_peers }),
     }));
     let right = Bucket { peers: right_peers };
 
-    bucket_node.children = LeafOrChildren::Children(Rc::clone(&left), right);
+    bucket_node.children = LeafOrChildren::Children(Arc::clone(&left), right);
 
-    (split_on, left, Rc::clone(&rc_bucket_node))
+    (split_on, left, Arc::clone(&rc_bucket_node))
 }
 
 #[cfg(test)]

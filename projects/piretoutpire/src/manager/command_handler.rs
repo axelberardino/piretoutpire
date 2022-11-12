@@ -1,19 +1,19 @@
 use super::context::Context;
 use crate::{
+    dht::peer_node::PeerNode,
     file::{file_chunk::FileChunk, torrent_file::TorrentFile},
-    network::{
-        api::{get_chunk, handshake},
-        protocol::{Command, ErrorCode, FileInfo},
-    },
+    network::protocol::{Command, ErrorCode, FileInfo},
     read_all,
 };
 use errors::AnyResult;
-use std::{ops::DerefMut, sync::Arc};
+use std::{net::SocketAddr, ops::DerefMut, sync::Arc};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufWriter},
     net::{tcp::WriteHalf, TcpStream},
     sync::Mutex,
 };
+
+// Server API ------------------------------------------------------------------
 
 // Command handler -------------------------------------------------------------
 
@@ -21,6 +21,7 @@ use tokio::{
 // handled.
 pub async fn apply_command(
     ctx: Arc<Mutex<Context>>,
+    sender_addr: SocketAddr,
     writer: &mut BufWriter<WriteHalf<'_>>,
     request: Command,
 ) -> AnyResult<()> {
@@ -122,7 +123,25 @@ pub async fn apply_command(
             }
         }
         Command::FindNodeRequest(sender, target) => {
-            eprintln!("FIXME: received find node({}, {})", sender, target);
+            let mut guard = ctx.lock().await;
+            let ctx = guard.deref_mut();
+            let peers = ctx
+                .dht
+                .find_node(PeerNode::new(sender, sender_addr), target)
+                .await
+                .map(|peer| peer.id())
+                .collect::<Vec<_>>();
+
+            // FIXME: should send id + addr
+            let response: Vec<u8> = Command::FindNodeResponse(peers).into();
+            eprintln!(
+                "FIXME: received find node({}, {}) and send back {:?}",
+                sender, target, response
+            );
+            writer.write_all(response.as_slice()).await?;
+        }
+        Command::FindNodeResponse(_) => {
+            unreachable!();
         }
 
         // Error handling
@@ -151,43 +170,10 @@ pub async fn listen_to_command(ctx: Arc<Mutex<Context>>, mut stream: TcpStream) 
         }
 
         match raw_order.as_slice().try_into() {
-            Ok(command) => apply_command(Arc::clone(&ctx), &mut writer, command).await?,
+            Ok(command) => apply_command(Arc::clone(&ctx), peer_addr, &mut writer, command).await?,
             Err(err) => eprintln!("Unknown command received! {}", err),
         }
     }
 
     Ok(())
-}
-
-// Some method (to move in manager ?) ------------------------------------------
-
-// Get file info from its ID (crc).
-// Start by sending a Handshake request, and received either an error code
-// or a FileInfo response.
-pub async fn get_file_info(
-    ctx: Arc<Mutex<Context>>,
-    stream: Arc<Mutex<TcpStream>>,
-    crc: u32,
-) -> AnyResult<()> {
-    let command = handshake(Arc::clone(&stream), crc).await?;
-    let mut guard = stream.lock().await;
-    let (_, writer) = guard.split();
-    let mut writer = tokio::io::BufWriter::new(writer);
-    apply_command(Arc::clone(&ctx), &mut writer, command).await
-}
-
-// Ask for a given file chunk.
-// Start by sending a GetChunk request, and received either an error code
-// or the chunk as a raw buffer.
-pub async fn ask_for_chunk(
-    ctx: Arc<Mutex<Context>>,
-    stream: Arc<Mutex<TcpStream>>,
-    crc: u32,
-    chunk_id: u32,
-) -> AnyResult<()> {
-    let command = get_chunk(Arc::clone(&stream), crc, chunk_id).await?;
-    let mut guard = stream.lock().await;
-    let (_, writer) = guard.split();
-    let mut writer = tokio::io::BufWriter::new(writer);
-    apply_command(Arc::clone(&ctx), &mut writer, command).await
 }

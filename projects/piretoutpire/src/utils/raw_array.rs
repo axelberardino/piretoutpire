@@ -41,6 +41,15 @@ pub fn u32_list_to_u8_array(list: &[u32]) -> AnyResult<Vec<u8>> {
     Ok(buf)
 }
 
+// Convert a u32 list int u8 vec.
+// Array must be short (< 256 values!).
+// On error, it will panic.
+//
+// See `u32_list_to_u8_array` for a failable version.
+pub fn u32_list_to_u8_array_unfailable(list: &[u32]) -> Vec<u8> {
+    u32_list_to_u8_array(list).expect("msg")
+}
+
 // Convert a u8 buffer into a u32 list.
 // Array must be short (< 256 values!) and at least one byte (for the size) must
 // be there.
@@ -60,7 +69,6 @@ pub fn u8_array_to_u32_list(array: &[u8]) -> AnyResult<Vec<u32>> {
 
     let mut res = Vec::with_capacity(size / 4);
     for array in array[1..].chunks(4) {
-        dbg!(&array);
         res.push(u8_array_to_u32(array.try_into()?));
     }
 

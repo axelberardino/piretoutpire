@@ -1,5 +1,5 @@
 use super::*;
-use crate::file::file_chunk::{FileChunk, FileFixedSizedChunk};
+use crate::file::file_chunk::FileFixedSizedChunk;
 
 #[test]
 fn test_create_metadata_from_one_chunk_file() -> AnyResult<()> {

@@ -1,5 +1,6 @@
 use super::{
-    command_handler::{ask_for_chunk, get_file_info, listen_to_command},
+    client::{handle_file_info, handle_find_node, handle_get_chunk},
+    command_handler::listen_to_command,
     context::Context,
 };
 use crate::file::{file_chunk::FileChunk, torrent_file::TorrentFile};
@@ -18,9 +19,10 @@ pub struct Manager {
 impl Manager {
     // Expect an address like: "127.0.0.1:8080".parse()
     pub fn new(addr: SocketAddr, working_directory: String) -> Self {
+        let id = 0;
         Self {
             addr,
-            ctx: Arc::new(Mutex::new(Context::new(working_directory))),
+            ctx: Arc::new(Mutex::new(Context::new(working_directory, id))),
         }
     }
 
@@ -34,7 +36,17 @@ impl Manager {
             let client_addr: SocketAddr = "127.0.0.1:4000".parse()?;
             let local_ctx = Arc::clone(&ctx);
             let stream = Arc::new(Mutex::new(TcpStream::connect(client_addr).await?));
-            get_file_info(local_ctx, stream, crc).await?;
+            handle_file_info(local_ctx, stream, crc).await?;
+        }
+
+        // Find node
+        {
+            let client_addr: SocketAddr = "127.0.0.1:4000".parse()?;
+            let local_ctx = Arc::clone(&ctx);
+            let stream = Arc::new(Mutex::new(TcpStream::connect(client_addr).await?));
+            let sender = 0;
+            let target = 42;
+            handle_find_node(local_ctx, stream, sender, target).await?;
         }
 
         // Get some info about what to download
@@ -58,7 +70,7 @@ impl Manager {
                 let stream = Arc::clone(&stream);
 
                 let handle =
-                    tokio::spawn(async move { ask_for_chunk(local_ctx, stream, crc, chunk_id).await });
+                    tokio::spawn(async move { handle_get_chunk(local_ctx, stream, crc, chunk_id).await });
                 handle.await??;
             }
         }

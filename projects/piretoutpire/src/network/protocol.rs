@@ -1,4 +1,4 @@
-use crate::utils::{u32_to_u8_array, u8_array_to_u32};
+use crate::utils::{u32_list_to_u8_array_unfailable, u32_to_u8_array, u8_array_to_u32, u8_array_to_u32_list};
 use errors::{bail, AnyError};
 use std::fmt::Display;
 
@@ -10,12 +10,14 @@ const GETCHUNK_SIZE: usize = 4 + 4;
 const SENDCHUNK_SIZE: usize = 4 + 4;
 const FILEINFO_SIZE: usize = 4 + 4 + 4 + 1; // 3*u32 + at least 1 char filename
 const FINDNODE_REQUEST_SIZE: usize = 4 + 4;
+const FINDNODE_RESPONSE_SIZE: usize = 1;
 
 const MIN_HANDSHAKE_SIZE: usize = ORDER_SIZE + HANDSHAKE_SIZE;
 const MIN_GETCHUNK_SIZE: usize = ORDER_SIZE + GETCHUNK_SIZE;
 const MIN_SENDCHUNK_SIZE: usize = ORDER_SIZE + SENDCHUNK_SIZE;
 const MIN_FILEINFO_SIZE: usize = ORDER_SIZE + FILEINFO_SIZE;
 const MIN_FINDNODE_REQUEST_SIZE: usize = ORDER_SIZE + FINDNODE_REQUEST_SIZE;
+const MIN_FINDNODE_RESPONSE_SIZE: usize = ORDER_SIZE + FINDNODE_RESPONSE_SIZE;
 
 const HANDSHAKE: u8 = 0x1;
 const GET_CHUNK: u8 = 0x2;
@@ -53,7 +55,7 @@ pub enum Command {
     // StoreRequest
     // StoreResponse
     FindNodeRequest(u32 /*sender*/, u32 /*target*/),
-    // FindNodeResponse(u32), // crc
+    FindNodeResponse(Vec<u32> /*peers_found*/),
     // FindValueRequest
     // FindValueResponse
 
@@ -126,7 +128,7 @@ impl TryFrom<&[u8]> for Command {
                 FIND_NODE_REQUEST => {
                     if value.len() < MIN_FINDNODE_REQUEST_SIZE {
                         bail!(
-                            "can't decode send_chunk, size too low ({} < {})",
+                            "can't decode find_node_request, size too low ({} < {})",
                             value.len(),
                             FINDNODE_REQUEST_SIZE
                         );
@@ -137,6 +139,18 @@ impl TryFrom<&[u8]> for Command {
                     let slice: [u8; 4] = core::array::from_fn(|i| value[i + ORDER_SIZE + 4]);
                     let target = u8_array_to_u32(&slice);
                     Self::FindNodeRequest(sender, target)
+                }
+                FIND_NODE_RESPONSE => {
+                    if value.len() < MIN_FINDNODE_RESPONSE_SIZE {
+                        bail!(
+                            "can't decode find_node_response, size too low ({} < {})",
+                            value.len(),
+                            FINDNODE_RESPONSE_SIZE
+                        );
+                    }
+
+                    let peers_found = u8_array_to_u32_list(&value[1..])?;
+                    Self::FindNodeResponse(peers_found)
                 }
 
                 // Errors
@@ -182,6 +196,11 @@ impl From<Command> for Vec<u8> {
                 let mut res = vec![FIND_NODE_REQUEST];
                 res.extend(u32_to_u8_array(sender));
                 res.extend(u32_to_u8_array(target));
+                res
+            }
+            Command::FindNodeResponse(peers_found) => {
+                let mut res = vec![FIND_NODE_RESPONSE];
+                res.extend(u32_list_to_u8_array_unfailable(peers_found.as_slice()));
                 res
             }
 

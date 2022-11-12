@@ -20,9 +20,30 @@ impl RoutingTable {
     }
 
     // Add a new node inside the routing table, store as a distance.
-    pub fn add_node(&mut self, mut peer: PeerNode) {
+    pub async fn add_node(&mut self, mut peer: PeerNode) {
         peer.set_id(distance(peer.id(), self.id));
-        self.bucket_tree.add_peer_node(peer);
+        self.bucket_tree.add_peer_node(peer).await;
+    }
+
+    // Get all peers in this routing table.
+    // FIXME: collect() followed by into_iter, not great
+    pub async fn get_all_peers(&self) -> impl Iterator<Item = PeerNode> {
+        self.bucket_tree
+            .get_all_peers()
+            .await
+            .map(|mut peer| {
+                peer.set_id(distance(peer.id(), self.id));
+                peer
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
+    // Get the closest peers from a given target.
+    pub async fn get_closest_peers_from(&self, target: u32, nb: usize) -> impl Iterator<Item = PeerNode> {
+        let mut peers = self.get_all_peers().await.collect::<Vec<_>>();
+        peers.sort_by_key(|peer| distance(peer.id(), target));
+        peers.into_iter().take(nb)
     }
 }
 

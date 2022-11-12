@@ -72,13 +72,9 @@ pub async fn handshake(stream: Arc<Mutex<TcpStream>>, crc: u32) -> AnyResult<Com
     raw_response.as_slice().try_into()
 }
 
-// // Get file info from its ID (crc).
-// // Start by sending a Handshake request, and received either an error code
-// // or a FileInfo response.
-// pub async fn find_node(stream: TcpStream, sender: u32, target: u32) -> AnyResult<()> {
-//     let request: Vec<u8> = Command::FindNodeRequest(sender, target).into();
-//     let raw_response = send_raw_unary(stream, request.as_slice()).await?;
-
-//     // FIXME handle response
-//     Ok(())
-// }
+// Search for a given peer.
+pub async fn find_node(stream: Arc<Mutex<TcpStream>>, sender: u32, target: u32) -> AnyResult<Command> {
+    let request: Vec<u8> = Command::FindNodeRequest(sender, target).into();
+    let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+    raw_response.as_slice().try_into()
+}
