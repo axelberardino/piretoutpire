@@ -1,153 +1,43 @@
 use super::context::Context;
 use crate::{
-    dht::peer_node::PeerNode,
-    file::{file_chunk::FileChunk, torrent_file::TorrentFile},
-    network::protocol::{Command, ErrorCode, FileInfo},
+    manager::server::{serve_find_node, serve_get_chunk, serve_handshake},
+    network::protocol::Command,
     read_all,
 };
 use errors::AnyResult;
-use std::{net::SocketAddr, ops::DerefMut, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufWriter},
     net::{tcp::WriteHalf, TcpStream},
     sync::Mutex,
 };
 
-// Server API ------------------------------------------------------------------
-
 // Command handler -------------------------------------------------------------
 
 // Interpret a command and act accordingly. This is where request/response are
 // handled.
-pub async fn apply_command(
+async fn dispatch(
     ctx: Arc<Mutex<Context>>,
     sender_addr: SocketAddr,
     writer: &mut BufWriter<WriteHalf<'_>>,
     request: Command,
 ) -> AnyResult<()> {
-    match request {
-        // Message handling
-        Command::Handshake(crc) => {
-            eprintln!("handshake, ask for crc {}", crc);
-            let response: Vec<u8> = {
-                let mut guard = ctx.lock().await;
-                let ctx = guard.deref_mut();
+    let res_command = match request {
+        // Server message handling
+        Command::Handshake(crc) => serve_handshake(ctx, crc).await,
+        Command::GetChunk(crc, chunk_id) => serve_get_chunk(ctx, crc, chunk_id).await,
+        Command::FindNodeRequest(sender, target) => serve_find_node(ctx, sender_addr, sender, target).await,
 
-                match ctx.available_torrents.get(&crc) {
-                    Some((torrent, _)) => {
-                        let file_info = FileInfo {
-                            file_size: torrent.metadata.file_size,
-                            chunk_size: torrent.metadata.chunk_size,
-                            file_crc: torrent.metadata.file_crc,
-                            original_filename: torrent.metadata.original_filename.clone(),
-                        };
-                        Command::FileInfo(file_info).into()
-                    }
-                    None => Command::ErrorOccured(ErrorCode::FileNotFound).into(),
-                }
-            };
-            eprintln!("sending buf {:?}", &response);
-            writer.write_all(response.as_slice()).await?;
-        }
-        Command::GetChunk(crc, chunk_id) => {
-            eprintln!("applying get_chunk {}", chunk_id);
-            let response: Vec<u8> = {
-                let mut guard = ctx.lock().await;
-                let ctx = guard.deref_mut();
+        // Client message handling, shouldn't be reach.
+        Command::SendChunk(_, _, _)
+        | Command::FileInfo(_)
+        | Command::FindNodeResponse(_)
+        | Command::ErrorOccured(_) => unreachable!(),
+    };
 
-                match ctx.available_torrents.get_mut(&crc) {
-                    Some((torrent, chunks)) => {
-                        if chunk_id as usize >= torrent.metadata.completed_chunks.len() {
-                            Command::ErrorOccured(ErrorCode::InvalidChunk).into()
-                        } else {
-                            match chunks.read_chunk(chunk_id) {
-                                Ok(chunk) => Command::SendChunk(crc, chunk_id, chunk).into(),
-                                Err(_) => Command::ErrorOccured(ErrorCode::ChunkNotFound).into(),
-                            }
-                        }
-                    }
-                    None => Command::ErrorOccured(ErrorCode::FileNotFound).into(),
-                }
-            };
-            eprintln!("sending buf {:?}", &response);
-            writer.write_all(response.as_slice()).await?;
-        }
-        Command::SendChunk(crc, chunk_id, raw_chunk) => {
-            eprintln!("received buf {:?}", &raw_chunk);
-            let mut guard = ctx.lock().await;
-            let ctx = guard.deref_mut();
-
-            match ctx.available_torrents.get_mut(&crc) {
-                Some((torrent, chunks)) => {
-                    if chunk_id as usize >= torrent.metadata.completed_chunks.len() {
-                        eprintln!("Invalid chunk_id {} for {}", chunk_id, crc);
-                    } else {
-                        // Update metadata and write local chunk.
-                        torrent.metadata.completed_chunks[chunk_id as usize] =
-                            Some(crc32fast::hash(&raw_chunk));
-                        torrent.dump()?;
-                        chunks.write_chunk(chunk_id, raw_chunk.as_slice())?;
-                    }
-                }
-                None => eprintln!("Got chunk for an unknown file"),
-            }
-        }
-        Command::FileInfo(file_info) => {
-            eprintln!("received file_info {:?}", &file_info);
-            let mut guard = ctx.lock().await;
-            let ctx = guard.deref_mut();
-
-            match ctx.available_torrents.entry(file_info.file_crc) {
-                std::collections::hash_map::Entry::Occupied(entry) => {
-                    eprintln!("already got the asked torrent {}", entry.key())
-                }
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    let torrent = TorrentFile::preallocate(
-                        format!(
-                            "{}/{}.metadata",
-                            ctx.working_directory, file_info.original_filename
-                        ),
-                        file_info.original_filename.clone(),
-                        file_info.file_size,
-                        file_info.file_crc,
-                        file_info.chunk_size,
-                    );
-                    torrent.dump()?;
-                    let chunks = FileChunk::open_new(
-                        format!("{}/{}", ctx.working_directory, file_info.original_filename),
-                        file_info.file_size,
-                    )?;
-
-                    entry.insert((torrent, chunks));
-                }
-            }
-        }
-        Command::FindNodeRequest(sender, target) => {
-            let mut guard = ctx.lock().await;
-            let ctx = guard.deref_mut();
-            let peers = ctx
-                .dht
-                .find_node(PeerNode::new(sender, sender_addr), target)
-                .await
-                .map(|peer| peer.id())
-                .collect::<Vec<_>>();
-
-            // FIXME: should send id + addr
-            let response: Vec<u8> = Command::FindNodeResponse(peers).into();
-            eprintln!(
-                "FIXME: received find node({}, {}) and send back {:?}",
-                sender, target, response
-            );
-            writer.write_all(response.as_slice()).await?;
-        }
-        Command::FindNodeResponse(_) => {
-            unreachable!();
-        }
-
-        // Error handling
-        Command::ErrorOccured(error) => eprintln!("peer return error: {}", error),
-    }
-
+    let response: Vec<u8> = res_command.into();
+    eprintln!("sending buf {:?}", &response);
+    writer.write_all(response.as_slice()).await?;
     writer.flush().await?;
     Ok(())
 }
@@ -170,7 +60,7 @@ pub async fn listen_to_command(ctx: Arc<Mutex<Context>>, mut stream: TcpStream) 
         }
 
         match raw_order.as_slice().try_into() {
-            Ok(command) => apply_command(Arc::clone(&ctx), peer_addr, &mut writer, command).await?,
+            Ok(command) => dispatch(Arc::clone(&ctx), peer_addr, &mut writer, command).await?,
             Err(err) => eprintln!("Unknown command received! {}", err),
         }
     }
