@@ -28,6 +28,7 @@ pub struct TreeNode {
 #[derive(Debug)]
 enum LeafOrChildren {
     Leaf(Bucket),
+    // TODO replace by left + bucket
     Children(Rc<RefCell<TreeNode>>, Rc<RefCell<TreeNode>>),
 }
 
@@ -121,12 +122,37 @@ impl BucketTree {
                 LeafOrChildren::Children(_, _) => unreachable!(),
             };
             if succeed {
-                break;
+                return true;
+            }
+            if end - start <= BUCKET_SIZE as u32 {
+                return false;
             }
             rc_tree_node = new_node;
         }
+    }
 
-        true
+    // Search the closest peers
+    pub fn search_closest_peers(&self, nb: usize) -> Vec<PeerNode> {
+        let mut queue = Vec::new();
+        let mut res = Vec::new();
+        queue.push(Rc::clone(&self.root));
+        while let Some(rc_tree_node) = queue.pop() {
+            let tree_node = rc_tree_node.borrow();
+            match &tree_node.children {
+                LeafOrChildren::Leaf(bucket) => {
+                    res.extend(bucket.peers.iter().map(Clone::clone).collect::<Vec<_>>());
+                    if res.len() >= nb {
+                        return res;
+                    }
+                }
+                LeafOrChildren::Children(rc_left, rc_right) => {
+                    queue.push(Rc::clone(rc_right));
+                    queue.push(Rc::clone(rc_left));
+                }
+            }
+        }
+
+        res
     }
 }
 

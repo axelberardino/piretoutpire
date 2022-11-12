@@ -24,3 +24,19 @@ fn test_construct_table() -> AnyResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_closest_peers() -> AnyResult<()> {
+    let dummy_addr = "127.0.0.1:4000".parse()?;
+    let mut tree = BucketTree::new();
+
+    // Insert as many values as to fill the bucket
+    for idx in 0..32 {
+        assert!(tree.add_peer_node(PeerNode::new(idx as u32, dummy_addr)));
+    }
+
+    let peers = tree.search_closest_peers(100);
+    assert_eq!(32, peers.len());
+
+    Ok(())
+}
