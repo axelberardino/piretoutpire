@@ -26,6 +26,16 @@ impl Manager {
         }
     }
 
+    // Start to bootstrap the DHT from an entry point (any available peer).
+    pub async fn bootstrap(&mut self, peer_addr: SocketAddr) -> AnyResult<()> {
+        let ctx = Arc::clone(&self.ctx);
+        let stream = Arc::new(Mutex::new(TcpStream::connect(peer_addr).await?));
+        let sender = 0;
+        let target = 42;
+        handle_find_node(ctx, stream, sender, target).await?;
+        Ok(())
+    }
+
     // Start downloading a file, or resume downloading
     pub async fn download_file(&mut self, crc: u32) -> AnyResult<()> {
         let ctx = Arc::clone(&self.ctx);
@@ -37,16 +47,6 @@ impl Manager {
             let local_ctx = Arc::clone(&ctx);
             let stream = Arc::new(Mutex::new(TcpStream::connect(client_addr).await?));
             handle_file_info(local_ctx, stream, crc).await?;
-        }
-
-        // Find node
-        {
-            let client_addr: SocketAddr = "127.0.0.1:4000".parse()?;
-            let local_ctx = Arc::clone(&ctx);
-            let stream = Arc::new(Mutex::new(TcpStream::connect(client_addr).await?));
-            let sender = 0;
-            let target = 42;
-            handle_find_node(local_ctx, stream, sender, target).await?;
         }
 
         // Get some info about what to download
@@ -65,12 +65,16 @@ impl Manager {
         {
             let client_addr: SocketAddr = "127.0.0.1:4000".parse()?;
             let stream = Arc::new(Mutex::new(TcpStream::connect(client_addr).await?));
+            let mut queries = Vec::new();
             for chunk_id in 0..nb_chunks {
                 let local_ctx = Arc::clone(&ctx);
                 let stream = Arc::clone(&stream);
 
                 let handle =
                     tokio::spawn(async move { handle_get_chunk(local_ctx, stream, crc, chunk_id).await });
+                queries.push(handle);
+            }
+            for handle in queries {
                 handle.await??;
             }
         }
@@ -79,23 +83,26 @@ impl Manager {
         Ok(())
     }
 
-    // Start to share a file on the peer network, as a seeder.
-    pub async fn share_existing_file<P: AsRef<Path>>(&mut self, file: P) -> AnyResult<()> {
+    // Load a file to be shared on the peer network.
+    pub async fn load_file<P: AsRef<Path>>(&mut self, file: P) -> AnyResult<()> {
         let torrent = TorrentFile::new(
             file.as_ref().display().to_string() + ".metadata",
             file.as_ref().display().to_string(),
         )?;
         let chunks = FileChunk::open_existing(&torrent.metadata.original_file)?;
-        {
-            let mut ctx = self.ctx.lock().await;
-            ctx.available_torrents
-                .insert(torrent.metadata.file_crc, (torrent, chunks));
-        }
 
-        self.start_stream().await
+        let mut ctx = self.ctx.lock().await;
+        ctx.available_torrents
+            .insert(torrent.metadata.file_crc, (torrent, chunks));
+
+        Ok(())
     }
 
-    async fn start_stream(&self) -> AnyResult<()> {
+    // FIXME
+    // Load all files in a given directory to be shared on the peer network.
+    // pub async fn load_directory<P: AsRef<Path>>(&mut self, dir: P) -> AnyResult<()> {}
+
+    pub async fn start_server(&self) -> AnyResult<()> {
         let listener = TcpListener::bind(self.addr).await?;
 
         loop {
