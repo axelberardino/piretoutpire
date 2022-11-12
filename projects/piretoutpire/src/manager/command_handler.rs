@@ -1,12 +1,13 @@
 use super::context::Context;
 use crate::{
-    file::{
-        file_chunk::{FileChunk, DEFAULT_CHUNK_SIZE},
-        torrent_file::TorrentFile,
+    file::{file_chunk::FileChunk, torrent_file::TorrentFile},
+    network::{
+        api::{get_chunk, handshake},
+        protocol::{Command, ErrorCode, FileInfo},
     },
-    network::protocol::{Command, ErrorCode, FileInfo},
+    read_all,
 };
-use errors::{bail, AnyResult};
+use errors::AnyResult;
 use std::{
     ops::DerefMut,
     sync::{Arc, Mutex},
@@ -16,30 +17,7 @@ use tokio::{
     net::{tcp::WriteHalf, TcpStream},
 };
 
-// Read the buffer until reaching the end of the command, or EOF.
-//
-// By default, read_to_end wait for an EOF (which never happen in a stream), and
-// read_exact raise an error if the remaining data to read is smaller than the
-// given value. This macro use a small 8 Ko buffer to force reading until what
-// we declared as an end of data (meaning if the last packet is smaller than the
-// buffer, let's consider we reach the end).
-macro_rules! read_all {
-    ($reader:ident) => {{
-        let mut res_buf: Vec<u8> = Vec::with_capacity(DEFAULT_CHUNK_SIZE as usize);
-        const BUF_SIZE: usize = 8 * 1024;
-        let mut buf: [u8; BUF_SIZE] = [0; BUF_SIZE];
-        while let Ok(bytes) = $reader.read(&mut buf[..]).await {
-            if bytes == 0 {
-                break;
-            }
-            res_buf.extend_from_slice(&buf[..bytes]);
-            if bytes < BUF_SIZE {
-                break;
-            }
-        }
-        res_buf
-    }};
-}
+// Command handler -------------------------------------------------------------
 
 // Interpret a command and act accordingly. This is where request/response are
 // handled.
@@ -145,21 +123,24 @@ pub async fn apply_command(
                 }
             }
         }
+        Command::FindNodeRequest(sender, target) => {
+            eprintln!("FIXME: received find node({}, {})", sender, target);
+        }
 
         // Error handling
-        Command::ErrorOccured(ErrorCode::FileNotFound) => eprintln!("peer don't have this file"),
-        Command::ErrorOccured(ErrorCode::ChunkNotFound) => eprintln!("peer don't have this chunk"),
-        Command::ErrorOccured(ErrorCode::InvalidChunk) => eprintln!("peer said chunk was invalid"),
+        Command::ErrorOccured(error) => eprintln!("peer return error: {}", error),
     }
 
     writer.flush().await?;
     Ok(())
 }
 
+// Main handler ----------------------------------------------------------------
+
 // Start to listen to command. One instance will be spawn for each peer.
 pub async fn listen_to_command(ctx: Arc<Mutex<Context>>, mut stream: TcpStream) -> AnyResult<()> {
     let peer_addr = stream.peer_addr()?;
-    eprintln!("Connected to {}", peer_addr);
+    eprintln!("{} is connected", peer_addr);
     let (reader, writer) = stream.split();
     let mut reader = tokio::io::BufReader::new(reader);
     let mut writer = tokio::io::BufWriter::new(writer);
@@ -180,32 +161,16 @@ pub async fn listen_to_command(ctx: Arc<Mutex<Context>>, mut stream: TcpStream) 
     Ok(())
 }
 
+// Some method (to move in manager ?) ------------------------------------------
+
 // Get file info from its ID (crc).
 // Start by sending a Handshake request, and received either an error code
 // or a FileInfo response.
-pub async fn get_file_info(ctx: Arc<Mutex<Context>>, mut stream: TcpStream, crc: u32) -> AnyResult<()> {
-    let peer_addr = stream.peer_addr()?;
-    eprintln!("Connecting to {}", peer_addr);
-    let (reader, writer) = stream.split();
-    let mut reader = tokio::io::BufReader::new(reader);
+pub async fn get_file_info(ctx: Arc<Mutex<Context>>, stream: TcpStream, crc: u32) -> AnyResult<()> {
+    let (mut stream, command) = handshake(stream, crc).await?;
+    let (_, writer) = stream.split();
     let mut writer = tokio::io::BufWriter::new(writer);
-
-    let buf: Vec<u8> = Command::Handshake(crc).into();
-    writer.write_all(buf.as_slice()).await?;
-    writer.flush().await?;
-
-    let raw_chunk = read_all!(reader);
-    let len = raw_chunk.len();
-    if len == 0 {
-        bail!("invalid buffer");
-    }
-
-    match raw_chunk.as_slice().try_into() {
-        Ok(command) => apply_command(Arc::clone(&ctx), &mut writer, command).await?,
-        Err(err) => eprintln!("Unknown command received! {}", err),
-    }
-
-    Ok(())
+    apply_command(Arc::clone(&ctx), &mut writer, command).await
 }
 
 // Ask for a given file chunk.
@@ -213,30 +178,12 @@ pub async fn get_file_info(ctx: Arc<Mutex<Context>>, mut stream: TcpStream, crc:
 // or the chunk as a raw buffer.
 pub async fn ask_for_chunk(
     ctx: Arc<Mutex<Context>>,
-    mut stream: TcpStream,
+    stream: TcpStream,
     crc: u32,
     chunk_id: u32,
 ) -> AnyResult<()> {
-    let peer_addr = stream.peer_addr()?;
-    eprintln!("Connecting to {}", peer_addr);
-    let (reader, writer) = stream.split();
-    let mut reader = tokio::io::BufReader::new(reader);
+    let (mut stream, command) = get_chunk(stream, crc, chunk_id).await?;
+    let (_, writer) = stream.split();
     let mut writer = tokio::io::BufWriter::new(writer);
-
-    let buf: Vec<u8> = Command::GetChunk(crc, chunk_id).into();
-    writer.write_all(buf.as_slice()).await?;
-    writer.flush().await?;
-
-    let raw_chunk = read_all!(reader);
-    let len = raw_chunk.len();
-    if len == 0 {
-        bail!("invalid buffer");
-    }
-
-    match raw_chunk.as_slice().try_into() {
-        Ok(command) => apply_command(Arc::clone(&ctx), &mut writer, command).await?,
-        Err(err) => eprintln!("Unknown command received! {}", err),
-    }
-
-    Ok(())
+    apply_command(Arc::clone(&ctx), &mut writer, command).await
 }

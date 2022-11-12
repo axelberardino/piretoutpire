@@ -49,14 +49,22 @@ impl PeerNode {
         }
     }
 
+    // Get the peer id.
     pub fn id(&self) -> u32 {
         self.id
     }
 
+    // Set the peer id.
+    pub fn set_id(&mut self, new_id: u32) {
+        self.id = new_id;
+    }
+
+    // Get the real ip address.
     pub fn addr(&self) -> SocketAddr {
         self.addr
     }
 
+    // Return the status of the node by looking on recent events.
     pub fn status(&self) -> PeerStatus {
         let last_request = match self.last_request {
             Some(last_req) => last_req,
@@ -71,12 +79,14 @@ impl PeerNode {
         PeerStatus::Questionable
     }
 
-    pub fn mark_outgoing_request(&mut self) {
+    // Update the last request made
+    pub fn update_last_request(&mut self) {
         self.last_request = Some(Instant::now());
         self.nb_successive_queries += 1;
     }
 
-    pub fn mark_response(&mut self) {
+    // Update the last response made
+    pub fn update_last_response(&mut self) {
         let now = Instant::now();
         self.last_response = Some(now);
         if self.last_request.is_none() {

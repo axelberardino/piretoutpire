@@ -1,5 +1,6 @@
 use crate::utils::{u32_to_u8_array, u8_array_to_u32};
 use errors::{bail, AnyError};
+use std::fmt::Display;
 
 // Protocol constants ----------------------------------------------------------
 
@@ -8,11 +9,30 @@ const HANDSHAKE_SIZE: usize = 4;
 const GETCHUNK_SIZE: usize = 4 + 4;
 const SENDCHUNK_SIZE: usize = 4 + 4;
 const FILEINFO_SIZE: usize = 4 + 4 + 4 + 1; // 3*u32 + at least 1 char filename
+const FINDNODE_REQUEST_SIZE: usize = 4 + 4;
 
 const MIN_HANDSHAKE_SIZE: usize = ORDER_SIZE + HANDSHAKE_SIZE;
 const MIN_GETCHUNK_SIZE: usize = ORDER_SIZE + GETCHUNK_SIZE;
 const MIN_SENDCHUNK_SIZE: usize = ORDER_SIZE + SENDCHUNK_SIZE;
 const MIN_FILEINFO_SIZE: usize = ORDER_SIZE + FILEINFO_SIZE;
+const MIN_FINDNODE_REQUEST_SIZE: usize = ORDER_SIZE + FINDNODE_REQUEST_SIZE;
+
+const HANDSHAKE: u8 = 0x1;
+const GET_CHUNK: u8 = 0x2;
+const SEND_CHUNK: u8 = 0x3;
+const FILE_INFO: u8 = 0x4;
+const PING_REQUEST: u8 = 0x5;
+const PING_RESPONSE: u8 = 0x6;
+const STORE_REQUEST: u8 = 0x7;
+const STORE_RESPONSE: u8 = 0x8;
+const FIND_NODE_REQUEST: u8 = 0x9;
+const FIND_NODE_RESPONSE: u8 = 0x10;
+const FIND_VALUE_REQUEST: u8 = 0x11;
+const FIND_VALUE_RESPONSE: u8 = 0x12;
+const FIND_GET_PEERS: u8 = 0x13;
+const FIND_SEND_PEERS: u8 = 0x14;
+
+const ERROR_OCCURED: u8 = 0x80;
 
 // Commands --------------------------------------------------------------------
 
@@ -20,14 +40,23 @@ const MIN_FILEINFO_SIZE: usize = ORDER_SIZE + FILEINFO_SIZE;
 #[derive(Debug)]
 pub enum Command {
     // Half the range for error code
-    ErrorOccured(ErrorCode), // 0x80 + ErrorCode
-    // Other half for messages
-    Handshake(u32),               // 0x01, crc
-    GetChunk(u32, u32),           // 0x02, crc, chunk_id
-    SendChunk(u32, u32, Vec<u8>), // 0x03, crc, chunk_id, chunk
-    FileInfo(FileInfo),           // 0x04, FileInfo
+    ErrorOccured(ErrorCode),
 
-    // FindNode(u32), // 0x05 crc
+    // File protocol
+    Handshake(u32 /*crc*/),
+    GetChunk(u32 /*crc*/, u32 /*chunk_id*/),
+    SendChunk(u32 /*crc*/, u32 /*chunk_id*/, Vec<u8> /*chunk*/),
+    FileInfo(FileInfo),
+    // DHT protocol
+    // PingRequest
+    // PingResponse
+    // StoreRequest
+    // StoreResponse
+    FindNodeRequest(u32 /*sender*/, u32 /*target*/),
+    // FindNodeResponse(u32), // crc
+    // FindValueRequest
+    // FindValueResponse
+
     // GetPeers(), // 0x06 ?
     // SeendPeers(), // 0x07 ?
 }
@@ -41,9 +70,9 @@ impl TryFrom<&[u8]> for Command {
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if let Some(raw_command) = value.get(0) {
-            Ok(match raw_command {
+            Ok(match *raw_command {
                 // Messages
-                0x1 => {
+                HANDSHAKE => {
                     if value.len() < MIN_HANDSHAKE_SIZE {
                         bail!(
                             "can't decode handshake, size too low ({} < {})",
@@ -55,7 +84,7 @@ impl TryFrom<&[u8]> for Command {
                     let crc = u8_array_to_u32(&slice);
                     Self::Handshake(crc)
                 }
-                0x2 => {
+                GET_CHUNK => {
                     if value.len() < MIN_GETCHUNK_SIZE {
                         bail!(
                             "can't decode get_chunk, size too low ({} < {})",
@@ -69,7 +98,7 @@ impl TryFrom<&[u8]> for Command {
                     let chunk_id = u8_array_to_u32(&slice);
                     Self::GetChunk(crc, chunk_id)
                 }
-                0x3 => {
+                SEND_CHUNK => {
                     if value.len() < MIN_SENDCHUNK_SIZE {
                         bail!(
                             "can't decode send_chunk, size too low ({} < {})",
@@ -89,15 +118,29 @@ impl TryFrom<&[u8]> for Command {
                         .collect::<Vec<u8>>();
                     Self::SendChunk(crc, chunk_id, chunk)
                 }
-                0x4 => {
+                FILE_INFO => {
+                    // FIXME request + response
                     let file_info = FileInfo::try_from(&value[1..])?;
                     Self::FileInfo(file_info)
                 }
+                FIND_NODE_REQUEST => {
+                    if value.len() < MIN_FINDNODE_REQUEST_SIZE {
+                        bail!(
+                            "can't decode send_chunk, size too low ({} < {})",
+                            value.len(),
+                            FINDNODE_REQUEST_SIZE
+                        );
+                    }
+
+                    let slice: [u8; 4] = core::array::from_fn(|i| value[i + ORDER_SIZE]);
+                    let sender = u8_array_to_u32(&slice);
+                    let slice: [u8; 4] = core::array::from_fn(|i| value[i + ORDER_SIZE + 4]);
+                    let target = u8_array_to_u32(&slice);
+                    Self::FindNodeRequest(sender, target)
+                }
 
                 // Errors
-                0x81 => Self::ErrorOccured(ErrorCode::FileNotFound),
-                0x82 => Self::ErrorOccured(ErrorCode::ChunkNotFound),
-                0x83 => Self::ErrorOccured(ErrorCode::InvalidChunk),
+                error if error >= ERROR_OCCURED => Self::ErrorOccured((error - ERROR_OCCURED).into()),
                 _ => bail!("Unknown command {}", raw_command),
             })
         } else {
@@ -112,18 +155,18 @@ impl From<Command> for Vec<u8> {
         match value {
             // Messages
             Command::Handshake(crc) => {
-                let mut res = vec![0x1];
+                let mut res = vec![HANDSHAKE];
                 res.extend(u32_to_u8_array(crc));
                 res
             }
             Command::GetChunk(crc, chunk_id) => {
-                let mut res = vec![0x2];
+                let mut res = vec![GET_CHUNK];
                 res.extend(u32_to_u8_array(crc));
                 res.extend(u32_to_u8_array(chunk_id));
                 res
             }
             Command::SendChunk(crc, chunk_id, chunk_buf) => {
-                let mut res = vec![0x3];
+                let mut res = vec![SEND_CHUNK];
                 res.extend(u32_to_u8_array(crc));
                 res.extend(u32_to_u8_array(chunk_id));
                 res.extend(chunk_buf);
@@ -131,15 +174,19 @@ impl From<Command> for Vec<u8> {
             }
             Command::FileInfo(file_info) => {
                 let raw_file_info: Vec<u8> = file_info.into();
-                let mut res = vec![0x4];
+                let mut res = vec![FILE_INFO];
                 res.extend(raw_file_info);
+                res
+            }
+            Command::FindNodeRequest(sender, target) => {
+                let mut res = vec![FIND_NODE_REQUEST];
+                res.extend(u32_to_u8_array(sender));
+                res.extend(u32_to_u8_array(target));
                 res
             }
 
             // Errors
-            Command::ErrorOccured(ErrorCode::FileNotFound) => vec![0x81],
-            Command::ErrorOccured(ErrorCode::ChunkNotFound) => vec![0x82],
-            Command::ErrorOccured(ErrorCode::InvalidChunk) => vec![0x83],
+            Command::ErrorOccured(error) => vec![ERROR_OCCURED + error as u8],
         }
     }
 }
@@ -202,11 +249,35 @@ impl From<FileInfo> for Vec<u8> {
 
 // Error codes -----------------------------------------------------------------
 
+#[repr(u8)]
 #[derive(Debug)]
 pub enum ErrorCode {
+    Unknown = 0,
     FileNotFound = 1,
     ChunkNotFound = 2,
     InvalidChunk = 3,
+}
+
+impl From<u8> for ErrorCode {
+    fn from(value: u8) -> Self {
+        match value {
+            1 => Self::FileNotFound,
+            2 => Self::ChunkNotFound,
+            3 => Self::InvalidChunk,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+impl Display for ErrorCode {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ErrorCode::Unknown => write!(fmt, "unknow error occured"),
+            ErrorCode::FileNotFound => write!(fmt, "file not found"),
+            ErrorCode::ChunkNotFound => write!(fmt, "chunk not found"),
+            ErrorCode::InvalidChunk => write!(fmt, "invalid chunk"),
+        }
+    }
 }
 
 #[cfg(test)]

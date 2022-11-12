@@ -18,8 +18,8 @@ fn test_construct_table() -> AnyResult<()> {
     }
     assert!(tree.add_peer_node(PeerNode::new(middle + BUCKET_SIZE as u32, dummy_addr)));
 
-    for idx in 0..BUCKET_SIZE + 1 {
-        assert!(tree.add_peer_node(PeerNode::new((middle - 100) + idx as u32, dummy_addr)));
+    for idx in 0..BUCKET_SIZE {
+        assert!(tree.add_peer_node(PeerNode::new(idx as u32, dummy_addr)));
     }
 
     Ok(())
@@ -31,12 +31,15 @@ fn test_closest_peers() -> AnyResult<()> {
     let mut tree = BucketTree::new();
 
     // Insert as many values as to fill the bucket
-    for idx in 0..32 {
+    for idx in 0..=10 {
+        assert!(tree.add_peer_node(PeerNode::new(idx as u32, dummy_addr)));
+    }
+    for idx in 15..=18 {
         assert!(tree.add_peer_node(PeerNode::new(idx as u32, dummy_addr)));
     }
 
     let peers = tree.search_closest_peers(100);
-    assert_eq!(32, peers.len());
+    assert_eq!(15, peers.len());
 
     Ok(())
 }

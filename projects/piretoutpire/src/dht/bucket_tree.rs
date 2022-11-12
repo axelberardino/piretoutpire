@@ -5,11 +5,29 @@ use std::{cell::RefCell, rc::Rc};
 // Maximum nodes by bucket. Bittorent use 8.
 const BUCKET_SIZE: usize = 4;
 
-// Allow to store data in a tree with dynamic bucketing.
+// Allow to store data in an unbalanced tree with dynamic bucketing. There are
+// more nodes on the left, than on the right.
 //
 // Everytime we insert a value, if we have more than BUCKET_SIZE value, the
 // current bucket will be split into 2. The bucket id value is div by 2, and all
 // values are distributed in the left or right sub-bucket accordingly.
+//
+// This is what a tree would looks like, with a range of [0, 31], with value:
+// [0, 1, 4, 5, 6, 8, 9, 16, 25, 30, 31] and with a bucket size of 4.
+//
+//            (16)
+//            / \
+//         (8)   [16, 25, 30, 31]
+//         / \
+//      (4)   [8, 9]
+//      / \
+// [0, 1] [4, 5, 6]
+//
+// Note that trying to add a new node in a full bucket, either result in the
+// tree to split this node and add it, or discard the new node because there is
+// no more room.
+// Because we allow more node on the left, it means this tree will store more
+// values close to 0.
 #[derive(Debug)]
 pub struct BucketTree {
     root: Rc<RefCell<TreeNode>>,
@@ -28,8 +46,7 @@ pub struct TreeNode {
 #[derive(Debug)]
 enum LeafOrChildren {
     Leaf(Bucket),
-    // TODO replace by left + bucket
-    Children(Rc<RefCell<TreeNode>>, Rc<RefCell<TreeNode>>),
+    Children(Rc<RefCell<TreeNode>>, Bucket),
 }
 
 #[derive(Debug)]
@@ -42,7 +59,7 @@ struct Bucket {
 
 // Public interface.
 impl BucketTree {
-    // Initilalize a new tree.
+    // Initialize a new tree.
     pub fn new() -> Self {
         Self {
             root: Rc::new(RefCell::new(TreeNode {
@@ -62,9 +79,9 @@ impl BucketTree {
         let mut tree_node = rc_tree_node.borrow_mut();
         debug_assert!(peer_node.id() >= tree_node.start);
         debug_assert!(peer_node.id() < tree_node.end);
-        let bucket = match &mut tree_node.children {
-            LeafOrChildren::Leaf(bucket) => bucket,
-            LeafOrChildren::Children(_, _) => unreachable!(),
+        let (bucket, right_leaf) = match &mut tree_node.children {
+            LeafOrChildren::Leaf(bucket) => (bucket, false),
+            LeafOrChildren::Children(_, bucket) => (bucket, true),
         };
 
         // Already exists
@@ -88,6 +105,11 @@ impl BucketTree {
             *bad_node = peer_node;
             bucket.peers.sort_by_key(|peer| peer.id());
             return true;
+        }
+
+        // We're already on a right leaf, and there's no room, just give up.
+        if right_leaf {
+            return false;
         }
 
         // Start by releasing all borrowed values.
@@ -119,7 +141,15 @@ impl BucketTree {
                         false
                     }
                 }
-                LeafOrChildren::Children(_, _) => unreachable!(),
+                LeafOrChildren::Children(_, bucket) => {
+                    if bucket.peers.len() < BUCKET_SIZE {
+                        bucket.peers.push(peer_node.clone());
+                        bucket.peers.sort_by_key(|peer| peer.id());
+                        true
+                    } else {
+                        return false;
+                    }
+                }
             };
             if succeed {
                 return true;
@@ -145,8 +175,11 @@ impl BucketTree {
                         return res;
                     }
                 }
-                LeafOrChildren::Children(rc_left, rc_right) => {
-                    queue.push(Rc::clone(rc_right));
+                LeafOrChildren::Children(rc_left, bucket) => {
+                    res.extend(bucket.peers.iter().map(Clone::clone).collect::<Vec<_>>());
+                    if res.len() >= nb {
+                        return res;
+                    }
                     queue.push(Rc::clone(rc_left));
                 }
             }
@@ -167,12 +200,12 @@ impl BucketTree {
 
             match &bucket_tree.children {
                 LeafOrChildren::Leaf(_) => Rc::clone(&rc_bucket_tree),
-                LeafOrChildren::Children(rc_left, rc_right) => {
+                LeafOrChildren::Children(rc_left, _) => {
                     let left = rc_left.borrow();
                     if id < left.end {
                         rec_find_leaf(Rc::clone(rc_left), id)
                     } else {
-                        rec_find_leaf(Rc::clone(rc_right), id)
+                        Rc::clone(&rc_bucket_tree)
                     }
                 }
             }
@@ -213,14 +246,11 @@ fn split_node(
         end: split_on,
         children: LeafOrChildren::Leaf(Bucket { peers: left_peers }),
     }));
-    let right = Rc::new(RefCell::new(TreeNode {
-        start: split_on,
-        end,
-        children: LeafOrChildren::Leaf(Bucket { peers: right_peers }),
-    }));
-    bucket_node.children = LeafOrChildren::Children(Rc::clone(&left), Rc::clone(&right));
+    let right = Bucket { peers: right_peers };
 
-    (split_on, left, right)
+    bucket_node.children = LeafOrChildren::Children(Rc::clone(&left), right);
+
+    (split_on, left, Rc::clone(&rc_bucket_node))
 }
 
 #[cfg(test)]
