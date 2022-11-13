@@ -1,5 +1,6 @@
 use errors::{bail, AnyError, AnyResult};
 use piretoutpire::manager::manager::Manager;
+use std::path::Path;
 
 enum ConnectionType {
     Seeder,
@@ -47,10 +48,14 @@ async fn main() -> AnyResult<()> {
             manager.start_server().await?;
         }
         ConnectionType::Leecher => {
-            let own_addr = "127.0.0.1:4000".parse()?;
+            let own_addr = "127.0.0.1:4001".parse()?;
             let peer_addr = "127.0.0.1:4000".parse()?;
             let mut manager = Manager::new(1, own_addr, "/tmp/leecher".to_owned());
+            if manager.load_dht(Path::new("/tmp/dht")).await.is_err() {
+                eprintln!("can't find dht file");
+            }
             manager.bootstrap(peer_addr).await?;
+            manager.dump_dht(Path::new("/tmp/dht")).await?;
             manager.download_file(3613099103).await?;
         }
     }

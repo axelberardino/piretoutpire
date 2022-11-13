@@ -1,11 +1,19 @@
 use super::{peer_node::PeerNode, routing_table::RoutingTable};
-use std::net::SocketAddr;
+use errors::AnyResult;
+use serde::{Deserialize, Serialize};
+use std::{fs::OpenOptions, io::BufReader, net::SocketAddr, path::Path};
 
 // The DHT is a way to handle a collaborative hash map. It allows to maintain a
 // decentralized network.
 #[derive(Debug)]
 pub struct DistributedHashTable {
     routing_table: RoutingTable,
+}
+
+// Intermediary structure to serialize and deserialize dht peers.
+#[derive(Debug, Serialize, Deserialize)]
+struct FilePeers {
+    peers: Vec<PeerNode>,
 }
 
 impl DistributedHashTable {
@@ -32,6 +40,41 @@ impl DistributedHashTable {
     // Add a new node for ease of purpose in test files.
     pub async fn add_node(&mut self, id: u32, addr: SocketAddr) {
         self.add_peer_node(PeerNode::new(id, addr)).await;
+    }
+
+    // Clean the whole dht.
+    pub async fn clean(&mut self) {
+        self.routing_table.clean().await;
+    }
+
+    // Dump this dht into a file.
+    pub async fn dump_to_file(&self, path: &Path) -> AnyResult<()> {
+        let peers = FilePeers {
+            peers: self.routing_table.get_all_peers().await.collect(),
+        };
+
+        let file = OpenOptions::new()
+            .truncate(true)
+            .create(true)
+            .write(true)
+            .open(&path)?;
+        serde_json::to_writer(file, &peers)?;
+
+        Ok(())
+    }
+
+    // Reload the dht from a given file.
+    pub async fn load_from_file(&mut self, path: &Path) -> AnyResult<()> {
+        let file = OpenOptions::new().read(true).open(&path)?;
+        let reader = BufReader::new(file);
+        let peers: FilePeers = serde_json::from_reader(reader)?;
+
+        self.clean().await;
+        for peer in peers.peers {
+            self.add_peer_node(peer).await;
+        }
+
+        Ok(())
     }
 
     // Add a new node for ease of purpose in test files.

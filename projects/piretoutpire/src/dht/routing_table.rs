@@ -20,6 +20,11 @@ impl RoutingTable {
         }
     }
 
+    // Clean the routing table.
+    pub async fn clean(&mut self) {
+        self.bucket_tree = BucketTree::new();
+    }
+
     // Add a new node inside the routing table, store as a distance.
     pub async fn add_node(&mut self, mut peer: PeerNode) {
         peer.set_id(distance(peer.id(), self.id));

@@ -9,7 +9,14 @@ use crate::{
     utils::distance,
 };
 use errors::{reexports::eyre::ContextCompat, AnyError, AnyResult};
-use std::{collections::HashSet, future::Future, net::SocketAddr, ops::DerefMut, path::Path, sync::Arc};
+use std::{
+    collections::HashSet,
+    future::Future,
+    net::SocketAddr,
+    ops::{Deref, DerefMut},
+    path::Path,
+    sync::Arc,
+};
 use tokio::{
     self,
     net::{TcpListener, TcpStream},
@@ -30,6 +37,22 @@ impl Manager {
             addr,
             ctx: Arc::new(Mutex::new(Context::new(working_directory, id))),
         }
+    }
+
+    // Dump the dht into a file.
+    pub async fn dump_dht(&self, path: &Path) -> AnyResult<()> {
+        let guard = self.ctx.lock().await;
+        let ctx = guard.deref();
+        ctx.dht.dump_to_file(path).await?;
+        Ok(())
+    }
+
+    // Reload the dht from a given file.
+    pub async fn load_dht(&mut self, path: &Path) -> AnyResult<()> {
+        let mut guard = self.ctx.lock().await;
+        let ctx = guard.deref_mut();
+        ctx.dht.load_from_file(path).await?;
+        Ok(())
     }
 
     // Start to bootstrap the DHT from an entry point (any available peer).
