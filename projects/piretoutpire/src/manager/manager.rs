@@ -1,5 +1,5 @@
 use super::{
-    client::{handle_file_info, handle_find_node, handle_get_chunk},
+    client::{handle_file_chunk, handle_file_info, handle_find_node},
     command_handler::listen_to_command,
     context::Context,
 };
@@ -8,7 +8,7 @@ use crate::{
     network::protocol::Peer,
     utils::distance,
 };
-use errors::{reexports::eyre::ContextCompat, AnyResult};
+use errors::{reexports::eyre::ContextCompat, AnyError, AnyResult};
 use std::{collections::HashSet, net::SocketAddr, ops::DerefMut, path::Path, sync::Arc};
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -81,7 +81,7 @@ impl Manager {
                 let stream = Arc::clone(&stream);
 
                 let handle =
-                    tokio::spawn(async move { handle_get_chunk(local_ctx, stream, crc, chunk_id).await });
+                    tokio::spawn(async move { handle_file_chunk(local_ctx, stream, crc, chunk_id).await });
                 queries.push(handle);
             }
             for handle in queries {
@@ -141,41 +141,46 @@ async fn find_closest_node(
         let mut best_distance_found = false;
         let mut next_queue = Vec::new();
 
+        let mut queries = Vec::new();
         for peer in queue.drain(..) {
             if visited.contains(&peer.id) {
                 continue;
             }
 
-            // FIXME: Parallel here
+            let ctx = Arc::clone(&ctx);
+            let handle = tokio::spawn(async move {
+                let peer_id = peer.id;
+                // FIXME: mmock that
+                let peers = query_find_node(ctx, peer, sender, target).await?;
+                Ok::<(u32, Vec<Peer>), AnyError>((peer_id, peers))
+            });
 
-            let stream = Arc::new(Mutex::new(TcpStream::connect(peer.addr).await?));
-            let mut peers = handle_find_node(stream, sender, target).await?;
+            queries.push(handle);
+        }
 
-            // The peer just answered us, let's add him into our dht.
-            visited.insert(peer.id);
-            {
-                let mut guard = ctx.lock().await;
-                let ctx = guard.deref_mut();
-                ctx.dht.add_node(peer.id, peer.addr).await;
-            }
-
-            // Sort peers by relevancy (the closest first).
-            peers.sort_by_key(|peer| distance(peer.id, target));
-
-            // Let's check if the best peers is better than the previous hop.
-            if let Some(peer) = peers.first() {
-                let distance = distance(peer.id, target);
-                if distance < best_distance {
-                    best_distance = distance;
-                    best_distance_found = true;
-                }
-                if distance == 0 {
-                    found_peer = Some(peer.clone());
-                }
-            }
-
+        for handle in queries {
+            let (peer_id, peers) = handle.await??;
+            visited.insert(peer_id);
             // Let's keep the 4 best nodes found.
-            next_queue.extend(peers.into_iter().take(4));
+            next_queue.extend(peers.into_iter());
+        }
+
+        // Sort peers by relevancy (the closest first), and only keep the 4 best
+        // unique ones.
+        next_queue.sort_by_key(|peer| distance(peer.id, target));
+        next_queue.dedup_by_key(|peer| peer.id);
+        next_queue = next_queue.into_iter().take(4).collect();
+
+        // Let's check if the best peers is better than the previous hop.
+        if let Some(peer) = next_queue.first() {
+            let distance = distance(peer.id, target);
+            if distance < best_distance {
+                best_distance = distance;
+                best_distance_found = true;
+            }
+            if distance == 0 {
+                found_peer = Some(peer.clone());
+            }
         }
 
         // If the next group queried didn't return a better result, we stop to hop.
@@ -186,3 +191,27 @@ async fn find_closest_node(
 
     Ok(found_peer)
 }
+
+// Query the distant nodes and update the current context.
+async fn query_find_node(
+    ctx: Arc<Mutex<Context>>,
+    peer: Peer,
+    sender: u32,
+    target: u32,
+) -> AnyResult<Vec<Peer>> {
+    let stream = Arc::new(Mutex::new(TcpStream::connect(peer.addr).await?));
+    let peers = handle_find_node(stream, sender, target).await?;
+
+    // The peer just answered us, let's add him into our dht.
+    {
+        let mut guard = ctx.lock().await;
+        let ctx = guard.deref_mut();
+        ctx.dht.add_node(peer.id, peer.addr).await;
+    }
+
+    Ok(peers)
+}
+
+#[cfg(test)]
+#[path = "manager_test.rs"]
+mod manager_test;

@@ -8,26 +8,26 @@ use std::{fmt::Display, net::SocketAddr};
 // Protocol constants ----------------------------------------------------------
 
 const ORDER_SIZE: usize = 1; // u8
-const HANDSHAKE_SIZE: usize = 4; // u32
-const GETCHUNK_SIZE: usize = 4 + 4; // 2*u32
-const SENDCHUNK_SIZE: usize = 4 + 4; // 2*u32 + chunk(0+)
-const FILEINFO_SIZE: usize = 4 + 4 + 4 + 4; // 3*u32 + str(4+)
+const FILEINFO_REQUEST_SIZE: usize = 4; // u32
+const CHUNK_REQUEST_SIZE: usize = 4 + 4; // 2*u32
+const CHUNK_RESPONSE_SIZE: usize = 4 + 4; // 2*u32 + chunk(0+)
+const FILEINFO_RESPONSE_SIZE: usize = 4 + 4 + 4 + 4; // 3*u32 + str(4+)
 const FINDNODE_REQUEST_SIZE: usize = 4 + 4;
 const FINDNODE_RESPONSE_SIZE: usize = 1; // list(1+)
 const PEER_SIZE: usize = 4 + 4; // id(4) + str(4+)
 
-const MIN_HANDSHAKE_SIZE: usize = ORDER_SIZE + HANDSHAKE_SIZE;
-const MIN_GETCHUNK_SIZE: usize = ORDER_SIZE + GETCHUNK_SIZE;
-const MIN_SENDCHUNK_SIZE: usize = ORDER_SIZE + SENDCHUNK_SIZE;
-const MIN_FILEINFO_SIZE: usize = ORDER_SIZE + FILEINFO_SIZE;
+const MIN_FILEINFO_REQUEST_SIZE: usize = ORDER_SIZE + FILEINFO_REQUEST_SIZE;
+const MIN_CHUNK_REQUEST_SIZE: usize = ORDER_SIZE + CHUNK_REQUEST_SIZE;
+const MIN_CHUNK_RESPONSE_SIZE: usize = ORDER_SIZE + CHUNK_RESPONSE_SIZE;
+const MIN_FILEINFO_RESPONSE_SIZE: usize = ORDER_SIZE + FILEINFO_RESPONSE_SIZE;
 const MIN_FINDNODE_REQUEST_SIZE: usize = ORDER_SIZE + FINDNODE_REQUEST_SIZE;
 const MIN_FINDNODE_RESPONSE_SIZE: usize = ORDER_SIZE + FINDNODE_RESPONSE_SIZE;
 const MIN_PEER_SIZE: usize = ORDER_SIZE + PEER_SIZE;
 
-const HANDSHAKE: u8 = 0x1;
+const FILEINFO_REQUEST: u8 = 0x1;
 const GET_CHUNK: u8 = 0x2;
 const SEND_CHUNK: u8 = 0x3;
-const FILE_INFO: u8 = 0x4;
+const FILE_INFO_RESPONSE: u8 = 0x4;
 const _PING_REQUEST: u8 = 0x5;
 const _PING_RESPONSE: u8 = 0x6;
 const _STORE_REQUEST: u8 = 0x7;
@@ -50,14 +50,14 @@ pub enum Command {
     ErrorOccured(ErrorCode),
 
     // File protocol
-    Handshake(u32 /*crc*/),
-    GetChunk(u32 /*crc*/, u32 /*chunk_id*/),
-    SendChunk(u32 /*crc*/, u32 /*chunk_id*/, Vec<u8> /*chunk*/),
-    FileInfo(FileInfo),
+    FileInfoRequest(u32 /*crc*/),
+    FileInfoResponse(FileInfo),
+    ChunkRequest(u32 /*crc*/, u32 /*chunk_id*/),
+    ChunkResponse(u32 /*crc*/, u32 /*chunk_id*/, Vec<u8> /*chunk*/),
 
     // DHT protocol
-    // PingRequest
-    // PingResponse
+    // PingRequest (sender_uid, if somone ping you, you're still there!)
+    // PingResponse (Or here, put the node_id inside).
     // StoreRequest
     // StoreResponse
     FindNodeRequest(u32 /*sender*/, u32 /*target*/),
@@ -77,38 +77,38 @@ impl TryFrom<&[u8]> for Command {
         if let Some(raw_command) = value.get(0) {
             Ok(match *raw_command {
                 // Messages
-                HANDSHAKE => {
-                    if value.len() < MIN_HANDSHAKE_SIZE {
+                FILEINFO_REQUEST => {
+                    if value.len() < MIN_FILEINFO_REQUEST_SIZE {
                         bail!(
                             "can't decode handshake, size too low ({} < {})",
                             value.len(),
-                            MIN_HANDSHAKE_SIZE
+                            MIN_FILEINFO_REQUEST_SIZE
                         );
                     }
                     let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
                     let crc = u8_array_to_u32(&slice);
-                    Self::Handshake(crc)
+                    Self::FileInfoRequest(crc)
                 }
                 GET_CHUNK => {
-                    if value.len() < MIN_GETCHUNK_SIZE {
+                    if value.len() < MIN_CHUNK_REQUEST_SIZE {
                         bail!(
                             "can't decode get_chunk, size too low ({} < {})",
                             value.len(),
-                            MIN_GETCHUNK_SIZE
+                            MIN_CHUNK_REQUEST_SIZE
                         );
                     }
                     let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
                     let crc = u8_array_to_u32(&slice);
                     let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE + 4]);
                     let chunk_id = u8_array_to_u32(&slice);
-                    Self::GetChunk(crc, chunk_id)
+                    Self::ChunkRequest(crc, chunk_id)
                 }
                 SEND_CHUNK => {
-                    if value.len() < MIN_SENDCHUNK_SIZE {
+                    if value.len() < MIN_CHUNK_RESPONSE_SIZE {
                         bail!(
                             "can't decode send_chunk, size too low ({} < {})",
                             value.len(),
-                            MIN_SENDCHUNK_SIZE
+                            MIN_CHUNK_RESPONSE_SIZE
                         );
                     }
 
@@ -118,22 +118,22 @@ impl TryFrom<&[u8]> for Command {
                     let chunk_id = u8_array_to_u32(&slice);
                     let chunk = value
                         .iter()
-                        .skip(MIN_SENDCHUNK_SIZE)
+                        .skip(MIN_CHUNK_RESPONSE_SIZE)
                         .map(|item| *item)
                         .collect::<Vec<u8>>();
-                    Self::SendChunk(crc, chunk_id, chunk)
+                    Self::ChunkResponse(crc, chunk_id, chunk)
                 }
-                FILE_INFO => {
-                    if value.len() < MIN_FILEINFO_SIZE {
+                FILE_INFO_RESPONSE => {
+                    if value.len() < MIN_FILEINFO_RESPONSE_SIZE {
                         bail!(
                             "can't decode file_info, size too low ({} < {})",
                             value.len(),
-                            MIN_FILEINFO_SIZE
+                            MIN_FILEINFO_RESPONSE_SIZE
                         );
                     }
 
                     let file_info = FileInfo::try_from(&value[1..])?;
-                    Self::FileInfo(file_info)
+                    Self::FileInfoResponse(file_info)
                 }
                 FIND_NODE_REQUEST => {
                     if value.len() < MIN_FINDNODE_REQUEST_SIZE {
@@ -193,27 +193,27 @@ impl From<Command> for Vec<u8> {
     fn from(value: Command) -> Self {
         match value {
             // Messages
-            Command::Handshake(crc) => {
-                let mut res = vec![HANDSHAKE];
+            Command::FileInfoRequest(crc) => {
+                let mut res = vec![FILEINFO_REQUEST];
                 res.extend(u32_to_u8_array(crc));
                 res
             }
-            Command::GetChunk(crc, chunk_id) => {
+            Command::ChunkRequest(crc, chunk_id) => {
                 let mut res = vec![GET_CHUNK];
                 res.extend(u32_to_u8_array(crc));
                 res.extend(u32_to_u8_array(chunk_id));
                 res
             }
-            Command::SendChunk(crc, chunk_id, chunk_buf) => {
+            Command::ChunkResponse(crc, chunk_id, chunk_buf) => {
                 let mut res = vec![SEND_CHUNK];
                 res.extend(u32_to_u8_array(crc));
                 res.extend(u32_to_u8_array(chunk_id));
                 res.extend(chunk_buf);
                 res
             }
-            Command::FileInfo(file_info) => {
+            Command::FileInfoResponse(file_info) => {
                 let raw_file_info: Vec<u8> = file_info.into();
-                let mut res = vec![FILE_INFO];
+                let mut res = vec![FILE_INFO_RESPONSE];
                 res.extend(raw_file_info);
                 res
             }
@@ -255,11 +255,11 @@ impl TryFrom<&[u8]> for FileInfo {
     type Error = AnyError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        if value.len() < MIN_FILEINFO_SIZE {
+        if value.len() < MIN_FILEINFO_RESPONSE_SIZE {
             bail!(
                 "can't decode file_info, size too low ({} < {})",
                 value.len(),
-                MIN_FILEINFO_SIZE
+                MIN_FILEINFO_RESPONSE_SIZE
             );
         }
 
@@ -284,7 +284,7 @@ impl TryFrom<&[u8]> for FileInfo {
 
 impl From<FileInfo> for Vec<u8> {
     fn from(value: FileInfo) -> Self {
-        let mut res = Vec::with_capacity(FILEINFO_SIZE);
+        let mut res = Vec::with_capacity(FILEINFO_RESPONSE_SIZE);
         res.extend(u32_to_u8_array(value.file_size));
         res.extend(u32_to_u8_array(value.chunk_size));
         res.extend(u32_to_u8_array(value.file_crc));

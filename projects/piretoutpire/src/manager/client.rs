@@ -2,7 +2,7 @@ use super::context::Context;
 use crate::{
     file::{file_chunk::FileChunk, torrent_file::TorrentFile},
     network::{
-        api::{find_node, get_chunk, handshake},
+        api::{file_chunk, file_info, find_node},
         protocol::{Command, Peer},
     },
 };
@@ -20,10 +20,10 @@ pub async fn handle_file_info(
     stream: Arc<Mutex<TcpStream>>,
     crc: u32,
 ) -> AnyResult<()> {
-    let command = handshake(Arc::clone(&stream), crc).await?;
+    let command = file_info(Arc::clone(&stream), crc).await?;
 
     match command {
-        Command::FileInfo(file_info) => {
+        Command::FileInfoResponse(file_info) => {
             eprintln!("received file_info {:?}", &file_info);
             let mut guard = ctx.lock().await;
             let ctx = guard.deref_mut();
@@ -62,16 +62,16 @@ pub async fn handle_file_info(
 // Ask for a given file chunk.
 // Start by sending a GetChunk request, and received either an error code
 // or the chunk as a raw buffer.
-pub async fn handle_get_chunk(
+pub async fn handle_file_chunk(
     ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
     crc: u32,
     chunk_id: u32,
 ) -> AnyResult<()> {
-    let command = get_chunk(Arc::clone(&stream), crc, chunk_id).await?;
+    let command = file_chunk(Arc::clone(&stream), crc, chunk_id).await?;
 
     match command {
-        Command::SendChunk(crc, chunk_id, raw_chunk) => {
+        Command::ChunkResponse(crc, chunk_id, raw_chunk) => {
             eprintln!("received buf {:?}", &raw_chunk);
             let mut guard = ctx.lock().await;
             let ctx = guard.deref_mut();

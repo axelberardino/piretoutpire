@@ -42,14 +42,14 @@ async fn main() -> AnyResult<()> {
     match connection_type {
         ConnectionType::Seeder => {
             let server_own_addr = "127.0.0.1:4000".parse()?;
-            let mut manager = Manager::new(server_own_addr, "/tmp/seeder".to_owned());
+            let mut manager = Manager::new(0, server_own_addr, "/tmp/seeder".to_owned());
             manager.load_file("/tmp/seeder/toto.txt").await?;
             manager.start_server().await?;
         }
         ConnectionType::Leecher => {
             let own_addr = "127.0.0.1:4000".parse()?;
             let peer_addr = "127.0.0.1:4000".parse()?;
-            let mut manager = Manager::new(own_addr, "/tmp/leecher".to_owned());
+            let mut manager = Manager::new(1, own_addr, "/tmp/leecher".to_owned());
             manager.bootstrap(peer_addr).await?;
             manager.download_file(3613099103).await?;
         }

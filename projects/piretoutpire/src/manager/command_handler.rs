@@ -1,6 +1,6 @@
 use super::context::Context;
 use crate::{
-    manager::server::{serve_find_node, serve_get_chunk, serve_handshake},
+    manager::server::{serve_file_chunk, serve_file_info, serve_find_node},
     network::protocol::Command,
     read_all,
 };
@@ -24,13 +24,13 @@ async fn dispatch(
 ) -> AnyResult<()> {
     let res_command = match request {
         // Server message handling
-        Command::Handshake(crc) => serve_handshake(ctx, crc).await,
-        Command::GetChunk(crc, chunk_id) => serve_get_chunk(ctx, crc, chunk_id).await,
+        Command::FileInfoRequest(crc) => serve_file_info(ctx, crc).await,
+        Command::ChunkRequest(crc, chunk_id) => serve_file_chunk(ctx, crc, chunk_id).await,
         Command::FindNodeRequest(sender, target) => serve_find_node(ctx, sender_addr, sender, target).await,
 
         // Client message handling, shouldn't be reach.
-        Command::SendChunk(_, _, _)
-        | Command::FileInfo(_)
+        Command::ChunkResponse(_, _, _)
+        | Command::FileInfoResponse(_)
         | Command::FindNodeResponse(_)
         | Command::ErrorOccured(_) => unreachable!(),
     };

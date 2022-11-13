@@ -59,15 +59,15 @@ pub async fn send_raw_unary(stream: Arc<Mutex<TcpStream>>, request: &[u8]) -> An
 // All unary send a request and handle the response in the command handler.
 
 // Ask for a chunk of a given file by its id.
-pub async fn get_chunk(stream: Arc<Mutex<TcpStream>>, crc: u32, chunk_id: u32) -> AnyResult<Command> {
-    let request: Vec<u8> = Command::GetChunk(crc, chunk_id).into();
+pub async fn file_chunk(stream: Arc<Mutex<TcpStream>>, crc: u32, chunk_id: u32) -> AnyResult<Command> {
+    let request: Vec<u8> = Command::ChunkRequest(crc, chunk_id).into();
     let raw_response = send_raw_unary(stream, request.as_slice()).await?;
     raw_response.as_slice().try_into()
 }
 
 // Ask for a chunk of a given file by its id.
-pub async fn handshake(stream: Arc<Mutex<TcpStream>>, crc: u32) -> AnyResult<Command> {
-    let request: Vec<u8> = Command::Handshake(crc).into();
+pub async fn file_info(stream: Arc<Mutex<TcpStream>>, crc: u32) -> AnyResult<Command> {
+    let request: Vec<u8> = Command::FileInfoRequest(crc).into();
     let raw_response = send_raw_unary(stream, request.as_slice()).await?;
     raw_response.as_slice().try_into()
 }
