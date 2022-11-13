@@ -1,16 +1,20 @@
-use crate::utils::{u32_list_to_u8_array_unfailable, u32_to_u8_array, u8_array_to_u32, u8_array_to_u32_list};
+use crate::utils::{
+    addr_to_u8_array, string_to_u8_array, u32_list_to_u8_array_unfailable, u32_to_u8_array, u8_array_to_addr,
+    u8_array_to_string, u8_array_to_u32, u8_array_to_u32_list,
+};
 use errors::{bail, AnyError};
-use std::fmt::Display;
+use std::{fmt::Display, net::SocketAddr};
 
 // Protocol constants ----------------------------------------------------------
 
-const ORDER_SIZE: usize = 1;
-const HANDSHAKE_SIZE: usize = 4;
-const GETCHUNK_SIZE: usize = 4 + 4;
-const SENDCHUNK_SIZE: usize = 4 + 4;
-const FILEINFO_SIZE: usize = 4 + 4 + 4 + 1; // 3*u32 + at least 1 char filename
+const ORDER_SIZE: usize = 1; // u8
+const HANDSHAKE_SIZE: usize = 4; // u32
+const GETCHUNK_SIZE: usize = 4 + 4; // 2*u32
+const SENDCHUNK_SIZE: usize = 4 + 4; // 2*u32 + chunk(0+)
+const FILEINFO_SIZE: usize = 4 + 4 + 4 + 4; // 3*u32 + str(4+)
 const FINDNODE_REQUEST_SIZE: usize = 4 + 4;
-const FINDNODE_RESPONSE_SIZE: usize = 1;
+const FINDNODE_RESPONSE_SIZE: usize = 1; // list(1+)
+const PEER_SIZE: usize = 4 + 4; // id(4) + str(4+)
 
 const MIN_HANDSHAKE_SIZE: usize = ORDER_SIZE + HANDSHAKE_SIZE;
 const MIN_GETCHUNK_SIZE: usize = ORDER_SIZE + GETCHUNK_SIZE;
@@ -18,6 +22,7 @@ const MIN_SENDCHUNK_SIZE: usize = ORDER_SIZE + SENDCHUNK_SIZE;
 const MIN_FILEINFO_SIZE: usize = ORDER_SIZE + FILEINFO_SIZE;
 const MIN_FINDNODE_REQUEST_SIZE: usize = ORDER_SIZE + FINDNODE_REQUEST_SIZE;
 const MIN_FINDNODE_RESPONSE_SIZE: usize = ORDER_SIZE + FINDNODE_RESPONSE_SIZE;
+const MIN_PEER_SIZE: usize = ORDER_SIZE + PEER_SIZE;
 
 const HANDSHAKE: u8 = 0x1;
 const GET_CHUNK: u8 = 0x2;
@@ -63,8 +68,6 @@ pub enum Command {
     // SeendPeers(), // 0x07 ?
 }
 // TODO send host:port list ^
-
-// Command Convert -------------------------------------------------------------
 
 // Convert a raw buffer into a command.
 impl TryFrom<&[u8]> for Command {
@@ -221,8 +224,6 @@ pub struct FileInfo {
     pub original_filename: String,
 }
 
-// FileInfo Convert ------------------------------------------------------------
-
 // Convert a raw buffer into a command.
 impl TryFrom<&[u8]> for FileInfo {
     type Error = AnyError;
@@ -244,7 +245,7 @@ impl TryFrom<&[u8]> for FileInfo {
         let file_crc = u8_array_to_u32(&slice);
 
         let raw_str = value.iter().skip(4 + 4 + 4).map(|ch| *ch).collect::<Vec<u8>>();
-        let original_filename = String::from_utf8(raw_str)?;
+        let original_filename = u8_array_to_string(raw_str.as_slice())?;
 
         Ok(Self {
             file_size,
@@ -261,7 +262,47 @@ impl From<FileInfo> for Vec<u8> {
         res.extend(u32_to_u8_array(value.file_size));
         res.extend(u32_to_u8_array(value.chunk_size));
         res.extend(u32_to_u8_array(value.file_crc));
-        res.extend(value.original_filename.as_bytes());
+        res.extend(string_to_u8_array(value.original_filename));
+        res
+    }
+}
+
+// Peer ------------------------------------------------------------------------
+
+// Struct used to hold a peer.
+pub struct Peer {
+    id: u32,
+    addr: SocketAddr,
+}
+
+// Convert a raw buffer into a command.
+impl TryFrom<&[u8]> for Peer {
+    type Error = AnyError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        if value.len() < MIN_PEER_SIZE {
+            bail!(
+                "can't decode peer, size too low ({} < {})",
+                value.len(),
+                MIN_PEER_SIZE
+            );
+        }
+
+        let slice: [u8; 4] = core::array::from_fn(|i| value[i]);
+        let id = u8_array_to_u32(&slice);
+
+        let raw_str = value.iter().skip(4).map(|ch| *ch).collect::<Vec<u8>>();
+        let addr = u8_array_to_addr(raw_str.as_slice())?;
+
+        Ok(Self { id, addr })
+    }
+}
+
+impl From<Peer> for Vec<u8> {
+    fn from(value: Peer) -> Self {
+        let mut res = Vec::with_capacity(PEER_SIZE);
+        res.extend(u32_to_u8_array(value.id));
+        res.extend(addr_to_u8_array(value.addr));
         res
     }
 }
