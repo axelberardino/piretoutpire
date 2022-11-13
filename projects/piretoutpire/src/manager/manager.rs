@@ -9,8 +9,9 @@ use crate::{
     utils::distance,
 };
 use errors::{reexports::eyre::ContextCompat, AnyError, AnyResult};
-use std::{collections::HashSet, net::SocketAddr, ops::DerefMut, path::Path, sync::Arc};
+use std::{collections::HashSet, future::Future, net::SocketAddr, ops::DerefMut, path::Path, sync::Arc};
 use tokio::{
+    self,
     net::{TcpListener, TcpStream},
     sync::Mutex,
 };
@@ -41,6 +42,7 @@ impl Manager {
             },
             self.id,
             self.id,
+            query_find_node,
         )
         .await?;
         Ok(())
@@ -123,15 +125,20 @@ impl Manager {
     }
 }
 
-// Send for a requested node until finding it. Will stop if the most closest
+// Search for a requested node until finding it. Will stop if the most closest
 // ones found in a row are not closer.
 // Return either the found peer or none.
-async fn find_closest_node(
+async fn find_closest_node<F, T>(
     ctx: Arc<Mutex<Context>>,
     initial_peer: Peer,
     sender: u32,
     target: u32,
-) -> AnyResult<Option<Peer>> {
+    mut query_func: F,
+) -> AnyResult<Option<Peer>>
+where
+    F: FnMut(Arc<Mutex<Context>>, Peer, u32, u32) -> T + Send + Copy + 'static,
+    T: Future<Output = AnyResult<Vec<Peer>>> + Send + 'static,
+{
     let mut queue = vec![initial_peer];
     let mut visited = HashSet::<u32>::new();
     let mut best_distance = u32::MAX;
@@ -141,8 +148,10 @@ async fn find_closest_node(
         let mut best_distance_found = false;
         let mut next_queue = Vec::new();
 
+        // Just launch 3 concurrent tasks.
         let mut queries = Vec::new();
-        for peer in queue.drain(..) {
+        let nb_batch = std::cmp::min(queue.len(), 3);
+        for peer in queue.drain(..nb_batch) {
             if visited.contains(&peer.id) {
                 continue;
             }
@@ -150,14 +159,14 @@ async fn find_closest_node(
             let ctx = Arc::clone(&ctx);
             let handle = tokio::spawn(async move {
                 let peer_id = peer.id;
-                // FIXME: mmock that
-                let peers = query_find_node(ctx, peer, sender, target).await?;
+                let peers = query_func(ctx, peer, sender, target).await?;
                 Ok::<(u32, Vec<Peer>), AnyError>((peer_id, peers))
             });
 
             queries.push(handle);
         }
 
+        // Now wait for all tasks to complete and put result in queue.
         for handle in queries {
             let (peer_id, peers) = handle.await??;
             visited.insert(peer_id);
@@ -165,15 +174,22 @@ async fn find_closest_node(
             next_queue.extend(peers.into_iter());
         }
 
-        // Sort peers by relevancy (the closest first), and only keep the 4 best
-        // unique ones.
+        // Sort peers by relevancy (the closest first)
         next_queue.sort_by_key(|peer| distance(peer.id, target));
         next_queue.dedup_by_key(|peer| peer.id);
-        next_queue = next_queue.into_iter().take(4).collect();
+        dbg!(next_queue
+            .iter()
+            .map(|x| (x.id, distance(x.id, target)))
+            .collect::<Vec<_>>());
 
         // Let's check if the best peers is better than the previous hop.
         if let Some(peer) = next_queue.first() {
             let distance = distance(peer.id, target);
+            println!(
+                "maxdist={} | peer={:04b}({}) target={:04b}({}) == {:04b}({})",
+                best_distance, peer.id, peer.id, target, target, distance, distance
+            );
+            dbg!(best_distance, distance, peer.id, target);
             if distance < best_distance {
                 best_distance = distance;
                 best_distance_found = true;
@@ -187,6 +203,10 @@ async fn find_closest_node(
         if !best_distance_found {
             break;
         }
+        queue.extend(next_queue);
+        queue.sort_by_key(|peer| distance(peer.id, target));
+        queue.dedup_by_key(|peer| peer.id);
+        dbg!(&queue);
     }
 
     Ok(found_peer)

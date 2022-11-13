@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 
 // The DHT is a way to handle a collaborative hash map. It allows to maintain a
 // decentralized network.
+#[derive(Debug)]
 pub struct DistributedHashTable {
     routing_table: RoutingTable,
 }
@@ -43,8 +44,20 @@ impl DistributedHashTable {
 #[cfg(test)]
 impl DistributedHashTable {
     // Get the number of peer in the dht.
-    async fn len(&self) -> usize {
+    pub async fn len(&self) -> usize {
         self.routing_table.get_all_peers().await.count()
+    }
+
+    // Get all peer ids, sorted.
+    pub async fn peer_ids(&self) -> Vec<u32> {
+        let mut res = self
+            .routing_table
+            .get_all_peers()
+            .await
+            .map(|peer| peer.id())
+            .collect::<Vec<u32>>();
+        res.sort();
+        res
     }
 }
 

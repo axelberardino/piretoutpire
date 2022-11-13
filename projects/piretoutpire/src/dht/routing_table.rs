@@ -4,6 +4,7 @@ use crate::utils::distance;
 // Holds information about other nodes.
 // This routing table represents part of the global distributed nodes. Only the
 // nodes "close" to id of the owner of this table, are maintained.
+#[derive(Debug)]
 pub struct RoutingTable {
     id: u32,
     bucket_tree: BucketTree,

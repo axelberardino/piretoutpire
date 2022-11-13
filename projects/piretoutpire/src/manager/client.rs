@@ -114,9 +114,4 @@ pub async fn handle_find_node(
         Command::ErrorOccured(error) => bail!("peer return error: {}", error),
         _ => bail!("Wrong command received: {:?}", command),
     }
-
-    // let mut guard = stream.lock().await;
-    // let (_, writer) = guard.split();
-    // let mut writer = tokio::io::BufWriter::new(writer);
-    // drop(guard);
 }

@@ -1,3 +1,5 @@
+#![feature(async_closure)]
+
 pub mod dht;
 pub mod file;
 pub mod manager;
