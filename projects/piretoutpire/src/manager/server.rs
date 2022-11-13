@@ -1,7 +1,7 @@
 use super::context::Context;
 use crate::{
     dht::peer_node::PeerNode,
-    network::protocol::{Command, ErrorCode, FileInfo},
+    network::protocol::{Command, ErrorCode, FileInfo, Peer},
 };
 use std::{net::SocketAddr, ops::DerefMut, sync::Arc};
 use tokio::sync::Mutex;
@@ -62,13 +62,15 @@ pub async fn serve_find_node(
         .dht
         .find_node(PeerNode::new(sender, sender_addr), target)
         .await
-        .map(|peer| peer.id())
+        .map(|peer| Peer {
+            id: peer.id(),
+            addr: peer.addr(),
+        })
         .collect::<Vec<_>>();
 
-    // FIXME: should send id + addr
     eprintln!(
-        "FIXME: received find node({}, {}) and send back {:?}",
-        sender, target, peers
+        "received find_node from {}({}) for {} and send back {:?}",
+        sender, sender_addr, target, peers
     );
     Command::FindNodeResponse(peers)
 }

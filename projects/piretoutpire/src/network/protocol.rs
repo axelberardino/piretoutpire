@@ -1,6 +1,6 @@
 use crate::utils::{
-    addr_to_u8_array, string_to_u8_array, u32_list_to_u8_array_unfailable, u32_to_u8_array, u8_array_to_addr,
-    u8_array_to_string, u8_array_to_u32, u8_array_to_u32_list,
+    addr_to_u8_array, string_to_u8_array, u32_to_u8_array, u8_array_to_addr, u8_array_to_string,
+    u8_array_to_u32,
 };
 use errors::{bail, AnyError};
 use std::{fmt::Display, net::SocketAddr};
@@ -28,16 +28,16 @@ const HANDSHAKE: u8 = 0x1;
 const GET_CHUNK: u8 = 0x2;
 const SEND_CHUNK: u8 = 0x3;
 const FILE_INFO: u8 = 0x4;
-const PING_REQUEST: u8 = 0x5;
-const PING_RESPONSE: u8 = 0x6;
-const STORE_REQUEST: u8 = 0x7;
-const STORE_RESPONSE: u8 = 0x8;
+const _PING_REQUEST: u8 = 0x5;
+const _PING_RESPONSE: u8 = 0x6;
+const _STORE_REQUEST: u8 = 0x7;
+const _STORE_RESPONSE: u8 = 0x8;
 const FIND_NODE_REQUEST: u8 = 0x9;
 const FIND_NODE_RESPONSE: u8 = 0x10;
-const FIND_VALUE_REQUEST: u8 = 0x11;
-const FIND_VALUE_RESPONSE: u8 = 0x12;
-const FIND_GET_PEERS: u8 = 0x13;
-const FIND_SEND_PEERS: u8 = 0x14;
+const _FIND_VALUE_REQUEST: u8 = 0x11;
+const _FIND_VALUE_RESPONSE: u8 = 0x12;
+const _FIND_GET_PEERS: u8 = 0x13;
+const _FIND_SEND_PEERS: u8 = 0x14;
 
 const ERROR_OCCURED: u8 = 0x80;
 
@@ -60,7 +60,7 @@ pub enum Command {
     // StoreRequest
     // StoreResponse
     FindNodeRequest(u32 /*sender*/, u32 /*target*/),
-    FindNodeResponse(Vec<u32> /*peers_found*/),
+    FindNodeResponse(Vec<Peer> /*peers_found*/),
     // FindValueRequest
     // FindValueResponse
 
@@ -85,7 +85,7 @@ impl TryFrom<&[u8]> for Command {
                             MIN_HANDSHAKE_SIZE
                         );
                     }
-                    let slice: [u8; 4] = core::array::from_fn(|i| value[i + ORDER_SIZE]);
+                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
                     let crc = u8_array_to_u32(&slice);
                     Self::Handshake(crc)
                 }
@@ -97,9 +97,9 @@ impl TryFrom<&[u8]> for Command {
                             MIN_GETCHUNK_SIZE
                         );
                     }
-                    let slice: [u8; 4] = core::array::from_fn(|i| value[i + ORDER_SIZE]);
+                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
                     let crc = u8_array_to_u32(&slice);
-                    let slice: [u8; 4] = core::array::from_fn(|i| value[i + ORDER_SIZE + 4]);
+                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE + 4]);
                     let chunk_id = u8_array_to_u32(&slice);
                     Self::GetChunk(crc, chunk_id)
                 }
@@ -112,9 +112,9 @@ impl TryFrom<&[u8]> for Command {
                         );
                     }
 
-                    let slice: [u8; 4] = core::array::from_fn(|i| value[i + ORDER_SIZE]);
+                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
                     let crc = u8_array_to_u32(&slice);
-                    let slice: [u8; 4] = core::array::from_fn(|i| value[i + ORDER_SIZE + 4]);
+                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE + 4]);
                     let chunk_id = u8_array_to_u32(&slice);
                     let chunk = value
                         .iter()
@@ -124,7 +124,14 @@ impl TryFrom<&[u8]> for Command {
                     Self::SendChunk(crc, chunk_id, chunk)
                 }
                 FILE_INFO => {
-                    // FIXME request + response
+                    if value.len() < MIN_FILEINFO_SIZE {
+                        bail!(
+                            "can't decode file_info, size too low ({} < {})",
+                            value.len(),
+                            MIN_FILEINFO_SIZE
+                        );
+                    }
+
                     let file_info = FileInfo::try_from(&value[1..])?;
                     Self::FileInfo(file_info)
                 }
@@ -133,13 +140,13 @@ impl TryFrom<&[u8]> for Command {
                         bail!(
                             "can't decode find_node_request, size too low ({} < {})",
                             value.len(),
-                            FINDNODE_REQUEST_SIZE
+                            MIN_FINDNODE_REQUEST_SIZE
                         );
                     }
 
-                    let slice: [u8; 4] = core::array::from_fn(|i| value[i + ORDER_SIZE]);
+                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
                     let sender = u8_array_to_u32(&slice);
-                    let slice: [u8; 4] = core::array::from_fn(|i| value[i + ORDER_SIZE + 4]);
+                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE + 4]);
                     let target = u8_array_to_u32(&slice);
                     Self::FindNodeRequest(sender, target)
                 }
@@ -148,12 +155,27 @@ impl TryFrom<&[u8]> for Command {
                         bail!(
                             "can't decode find_node_response, size too low ({} < {})",
                             value.len(),
-                            FINDNODE_RESPONSE_SIZE
+                            MIN_FINDNODE_RESPONSE_SIZE
                         );
                     }
 
-                    let peers_found = u8_array_to_u32_list(&value[1..])?;
-                    Self::FindNodeResponse(peers_found)
+                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
+                    let list_size = u8_array_to_u32(&slice) as usize;
+                    let res = (0..list_size).try_fold(
+                        (Vec::<Peer>::new(), ORDER_SIZE + 4),
+                        |(mut acc, shift), _| {
+                            let raw = &value[shift..];
+                            // size of addr is after id (in pos 4).
+                            let slice: [u8; 4] = core::array::from_fn(|idx| value[shift + idx + 4]);
+                            let addr_size = u8_array_to_u32(&slice) as usize;
+
+                            let peer = Peer::try_from(raw)?;
+                            acc.push(peer);
+                            Ok::<(Vec<Peer>, usize), AnyError>((acc, shift + addr_size + 4))
+                        },
+                    )?;
+                    let (peers_list, _) = res;
+                    Self::FindNodeResponse(peers_list)
                 }
 
                 // Errors
@@ -203,8 +225,12 @@ impl From<Command> for Vec<u8> {
             }
             Command::FindNodeResponse(peers_found) => {
                 let mut res = vec![FIND_NODE_RESPONSE];
-                res.extend(u32_list_to_u8_array_unfailable(peers_found.as_slice()));
-                res
+                res.extend(u32_to_u8_array(peers_found.len() as u32));
+                peers_found.into_iter().fold(res, |mut acc, peer| {
+                    let raw: Vec<u8> = peer.into();
+                    acc.extend(raw);
+                    acc
+                })
             }
 
             // Errors
@@ -270,9 +296,10 @@ impl From<FileInfo> for Vec<u8> {
 // Peer ------------------------------------------------------------------------
 
 // Struct used to hold a peer.
+#[derive(Debug)]
 pub struct Peer {
-    id: u32,
-    addr: SocketAddr,
+    pub id: u32,
+    pub addr: SocketAddr,
 }
 
 // Convert a raw buffer into a command.
