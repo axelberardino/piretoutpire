@@ -1,5 +1,5 @@
 use super::{
-    client::{handle_file_chunk, handle_file_info, handle_find_node, handle_ping},
+    client::{handle_file_chunk, handle_file_info, handle_find_node, handle_message, handle_ping},
     command_handler::listen_to_command,
     context::Context,
 };
@@ -10,6 +10,7 @@ use crate::{
 };
 use errors::{reexports::eyre::ContextCompat, AnyError, AnyResult};
 use std::{
+    any::Any,
     collections::HashSet,
     future::Future,
     net::SocketAddr,
@@ -75,6 +76,42 @@ impl Manager {
         // then give back 4 close nodes.
         find_closest_node(Arc::clone(&self.ctx), peer, self.id, self.id, query_find_node).await?;
         Ok(())
+    }
+
+    // Send a message to a peer. Return if the peer acknowledge it.
+    pub async fn send_message(&self, target: u32, message: String) -> AnyResult<bool> {
+        let mut guard = self.ctx.lock().await;
+        let ctx = guard.deref_mut();
+        // Let's check if we have a candidate, and if our exact node.
+        let close_peer = ctx.dht.find_closest_peer(target).await;
+
+        let peer = match close_peer {
+            Some(peer) if peer.id() == target => peer,
+            Some(peer) => {
+                // We don't have this peer, let's try to find it.
+                find_closest_node(
+                    Arc::clone(&self.ctx),
+                    Peer {
+                        id: peer.id(),
+                        addr: peer.addr(),
+                    },
+                    self.id,
+                    self.id,
+                    query_find_node,
+                )
+                .await?;
+                let close_peer_again = ctx.dht.find_closest_peer(target).await;
+                match close_peer_again {
+                    Some(peer) if peer.id() == target => peer,
+                    _ => return Ok(false),
+                }
+            }
+            None => return Ok(false),
+        };
+
+        let stream = Arc::new(Mutex::new(TcpStream::connect(peer.addr()).await?));
+        handle_message(stream, message).await?;
+        Ok(true)
     }
 
     // Start downloading a file, or resume downloading

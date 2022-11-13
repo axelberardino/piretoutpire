@@ -47,6 +47,16 @@ impl DistributedHashTable {
         res.into_iter()
     }
 
+    // Search for the closest peer.
+    pub async fn find_closest_peer(&self, target: u32) -> Option<PeerNode> {
+        let mut res = self
+            .routing_table
+            .get_closest_peers_from(target, 1)
+            .await
+            .collect::<Vec<_>>();
+        res.pop()
+    }
+
     // Add a new node for ease of purpose in test files.
     pub async fn add_node(&mut self, id: u32, addr: SocketAddr) {
         self.add_peer_node(PeerNode::new(id, addr)).await;

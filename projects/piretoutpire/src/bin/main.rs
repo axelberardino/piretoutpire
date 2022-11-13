@@ -57,6 +57,9 @@ async fn main() -> AnyResult<()> {
             manager.bootstrap(peer_addr).await?;
             manager.dump_dht(Path::new("/tmp/dht")).await?;
             manager.download_file(3613099103).await?;
+
+            let succeed = manager.send_message(0, "hello dear server".to_owned()).await?;
+            eprintln!("Message sent: {}", succeed);
         }
     }
 
