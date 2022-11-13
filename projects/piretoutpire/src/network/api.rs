@@ -78,3 +78,10 @@ pub async fn find_node(stream: Arc<Mutex<TcpStream>>, sender: u32, target: u32) 
     let raw_response = send_raw_unary(stream, request.as_slice()).await?;
     raw_response.as_slice().try_into()
 }
+
+// Ping a peer, checking if he's alive and get its id.
+pub async fn ping(stream: Arc<Mutex<TcpStream>>, sender: u32) -> AnyResult<Command> {
+    let request: Vec<u8> = Command::PingRequest(sender).into();
+    let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+    raw_response.as_slice().try_into()
+}

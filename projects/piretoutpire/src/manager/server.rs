@@ -74,3 +74,13 @@ pub async fn serve_find_node(
     );
     Command::FindNodeResponse(peers)
 }
+
+// Received the sender id, and response with this server id.
+pub async fn serve_ping(ctx: Arc<Mutex<Context>>, crc: u32) -> Command {
+    let mut guard = ctx.lock().await;
+    let ctx = guard.deref_mut();
+
+    let own_id = ctx.dht.id();
+    eprintln!("received ping from {}, sending {}", crc, own_id);
+    Command::PingResponse(own_id)
+}

@@ -1,27 +1,37 @@
 use super::{peer_node::PeerNode, routing_table::RoutingTable};
 use errors::AnyResult;
 use serde::{Deserialize, Serialize};
-use std::{fs::OpenOptions, io::BufReader, net::SocketAddr, path::Path};
+use std::{collections::HashMap, fs::OpenOptions, io::BufReader, net::SocketAddr, path::Path};
 
 // The DHT is a way to handle a collaborative hash map. It allows to maintain a
 // decentralized network.
 #[derive(Debug)]
 pub struct DistributedHashTable {
+    id: u32,
     routing_table: RoutingTable,
+    kv_store: HashMap<u32, String>,
 }
 
 // Intermediary structure to serialize and deserialize dht peers.
 #[derive(Debug, Serialize, Deserialize)]
 struct FilePeers {
     peers: Vec<PeerNode>,
+    kv_store: HashMap<u32, String>,
 }
 
 impl DistributedHashTable {
     // Initiate a new DHT for a given user.
     pub fn new(id: u32) -> Self {
         Self {
+            id,
             routing_table: RoutingTable::new(id),
+            kv_store: HashMap::new(),
         }
+    }
+
+    // Get the owner id of this DHT.
+    pub fn id(&self) -> u32 {
+        self.id
     }
 
     // Try to find a given node. Either return it, or return the closest known
@@ -51,6 +61,7 @@ impl DistributedHashTable {
     pub async fn dump_to_file(&self, path: &Path) -> AnyResult<()> {
         let peers = FilePeers {
             peers: self.routing_table.get_all_peers().await.collect(),
+            kv_store: self.kv_store.clone(),
         };
 
         let file = OpenOptions::new()
@@ -73,6 +84,7 @@ impl DistributedHashTable {
         for peer in peers.peers {
             self.add_peer_node(peer).await;
         }
+        self.kv_store = peers.kv_store;
 
         Ok(())
     }

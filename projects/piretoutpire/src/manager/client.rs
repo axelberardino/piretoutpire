@@ -2,7 +2,7 @@ use super::context::Context;
 use crate::{
     file::{file_chunk::FileChunk, torrent_file::TorrentFile},
     network::{
-        api::{file_chunk, file_info, find_node},
+        api::{file_chunk, file_info, find_node, ping},
         protocol::{Command, Peer},
     },
 };
@@ -110,6 +110,20 @@ pub async fn handle_find_node(
         Command::FindNodeResponse(peers_found) => {
             eprintln!("received find node {:?}", &peers_found);
             Ok(peers_found)
+        }
+        Command::ErrorOccured(error) => bail!("peer return error: {}", error),
+        _ => bail!("Wrong command received: {:?}", command),
+    }
+}
+
+// Ask a peer for it's id, and check if he's alive.
+pub async fn handle_ping(stream: Arc<Mutex<TcpStream>>, sender: u32) -> AnyResult<u32> {
+    let command = ping(Arc::clone(&stream), sender).await?;
+
+    match command {
+        Command::PingResponse(target) => {
+            eprintln!("received ping node {:?}", target);
+            Ok(target)
         }
         Command::ErrorOccured(error) => bail!("peer return error: {}", error),
         _ => bail!("Wrong command received: {:?}", command),

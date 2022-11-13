@@ -8,36 +8,55 @@ use std::{fmt::Display, net::SocketAddr};
 // Protocol constants ----------------------------------------------------------
 
 const ORDER_SIZE: usize = 1; // u8
+const PEER_SIZE: usize = 4 + 4; // id(4) + str(4+)
 const FILEINFO_REQUEST_SIZE: usize = 4; // u32
 const CHUNK_REQUEST_SIZE: usize = 4 + 4; // 2*u32
 const CHUNK_RESPONSE_SIZE: usize = 4 + 4; // 2*u32 + chunk(0+)
 const FILEINFO_RESPONSE_SIZE: usize = 4 + 4 + 4 + 4; // 3*u32 + str(4+)
 const FINDNODE_REQUEST_SIZE: usize = 4 + 4;
 const FINDNODE_RESPONSE_SIZE: usize = 1; // list(1+)
-const PEER_SIZE: usize = 4 + 4; // id(4) + str(4+)
+const PING_REQUEST_SIZE: usize = 4; // u32
+const PING_RESPONSE_SIZE: usize = 4; // u32
+const STORE_REQUEST_SIZE: usize = 4 + 1; // u32 + str(0+)
+const STORE_RESPONSE_SIZE: usize = 0; // just an acknowledge
+const FIND_VALUE_REQUEST_SIZE: usize = 4; // u32
+const FIND_VALUE_RESPONSE_SIZE: usize = 1; // str(0+)
+const MESSAGE_REQUEST_SIZE: usize = 4 + 1; // u32 + str(0+)
+const MESSAGE_RESPONSE_SIZE: usize = 0; // just an acknowledge
 
+const MIN_PEER_SIZE: usize = ORDER_SIZE + PEER_SIZE;
 const MIN_FILEINFO_REQUEST_SIZE: usize = ORDER_SIZE + FILEINFO_REQUEST_SIZE;
 const MIN_CHUNK_REQUEST_SIZE: usize = ORDER_SIZE + CHUNK_REQUEST_SIZE;
 const MIN_CHUNK_RESPONSE_SIZE: usize = ORDER_SIZE + CHUNK_RESPONSE_SIZE;
 const MIN_FILEINFO_RESPONSE_SIZE: usize = ORDER_SIZE + FILEINFO_RESPONSE_SIZE;
 const MIN_FINDNODE_REQUEST_SIZE: usize = ORDER_SIZE + FINDNODE_REQUEST_SIZE;
 const MIN_FINDNODE_RESPONSE_SIZE: usize = ORDER_SIZE + FINDNODE_RESPONSE_SIZE;
-const MIN_PEER_SIZE: usize = ORDER_SIZE + PEER_SIZE;
+const MIN_PING_REQUEST_SIZE: usize = ORDER_SIZE + PING_REQUEST_SIZE;
+const MIN_PING_RESPONSE_SIZE: usize = ORDER_SIZE + PING_RESPONSE_SIZE;
+const MIN_STORE_REQUEST_SIZE: usize = ORDER_SIZE + STORE_REQUEST_SIZE;
+const MIN_STORE_RESPONSE_SIZE: usize = ORDER_SIZE + STORE_RESPONSE_SIZE;
+const MIN_FIND_VALUE_REQUEST_SIZE: usize = ORDER_SIZE + FIND_VALUE_REQUEST_SIZE;
+const MIN_FIND_VALUE_RESPONSE_SIZE: usize = ORDER_SIZE + FIND_VALUE_RESPONSE_SIZE;
+const MIN_MESSAGE_REQUEST_SIZE: usize = ORDER_SIZE + MESSAGE_REQUEST_SIZE;
+const MIN_MESSAGE_RESPONSE_SIZE: usize = ORDER_SIZE + MESSAGE_RESPONSE_SIZE;
 
+// File protocol.
 const FILEINFO_REQUEST: u8 = 0x1;
-const GET_CHUNK: u8 = 0x2;
-const SEND_CHUNK: u8 = 0x3;
-const FILE_INFO_RESPONSE: u8 = 0x4;
-const _PING_REQUEST: u8 = 0x5;
-const _PING_RESPONSE: u8 = 0x6;
-const _STORE_REQUEST: u8 = 0x7;
-const _STORE_RESPONSE: u8 = 0x8;
+const FILE_INFO_RESPONSE: u8 = 0x2;
+const CHUNK_REQUEST: u8 = 0x3;
+const CHUNK_RESPONSE: u8 = 0x4;
+// DHT protocol.
+const PING_REQUEST: u8 = 0x5;
+const PING_RESPONSE: u8 = 0x6;
+const STORE_REQUEST: u8 = 0x7;
+const STORE_RESPONSE: u8 = 0x8;
 const FIND_NODE_REQUEST: u8 = 0x9;
-const FIND_NODE_RESPONSE: u8 = 0x10;
-const _FIND_VALUE_REQUEST: u8 = 0x11;
-const _FIND_VALUE_RESPONSE: u8 = 0x12;
-const _FIND_GET_PEERS: u8 = 0x13;
-const _FIND_SEND_PEERS: u8 = 0x14;
+const FIND_NODE_RESPONSE: u8 = 0xA;
+const FIND_VALUE_REQUEST: u8 = 0xB;
+const FIND_VALUE_RESPONSE: u8 = 0xC;
+// Message protocol.
+const MESSAGE_REQUEST: u8 = 0xD;
+const MESSAGE_RESPONSE: u8 = 0xE;
 
 const ERROR_OCCURED: u8 = 0x80;
 
@@ -56,17 +75,18 @@ pub enum Command {
     ChunkResponse(u32 /*crc*/, u32 /*chunk_id*/, Vec<u8> /*chunk*/),
 
     // DHT protocol
-    // PingRequest (sender_uid, if somone ping you, you're still there!)
-    // PingResponse (Or here, put the node_id inside).
-    // StoreRequest
-    // StoreResponse
+    PingRequest(u32 /*sender*/),
+    PingResponse(u32 /*target*/),
     FindNodeRequest(u32 /*sender*/, u32 /*target*/),
     FindNodeResponse(Vec<Peer> /*peers_found*/),
-    // FindValueRequest
-    // FindValueResponse
+    StoreRequest(u32 /*key*/, String /*message*/),
+    StoreResponse(),
+    FindValueRequest(u32 /*key*/),
+    FindValueResponse(String /*message*/),
 
-    // GetPeers(), // 0x06 ?
-    // SeendPeers(), // 0x07 ?
+    // Message protocol
+    MessageRequest(u32 /*target*/, String /*message*/),
+    MessageResponse(),
 }
 
 // Convert a raw buffer into a command.
@@ -89,10 +109,10 @@ impl TryFrom<&[u8]> for Command {
                     let crc = u8_array_to_u32(&slice);
                     Self::FileInfoRequest(crc)
                 }
-                GET_CHUNK => {
+                CHUNK_REQUEST => {
                     if value.len() < MIN_CHUNK_REQUEST_SIZE {
                         bail!(
-                            "can't decode get_chunk, size too low ({} < {})",
+                            "can't decode chunk_request, size too low ({} < {})",
                             value.len(),
                             MIN_CHUNK_REQUEST_SIZE
                         );
@@ -103,10 +123,10 @@ impl TryFrom<&[u8]> for Command {
                     let chunk_id = u8_array_to_u32(&slice);
                     Self::ChunkRequest(crc, chunk_id)
                 }
-                SEND_CHUNK => {
+                CHUNK_RESPONSE => {
                     if value.len() < MIN_CHUNK_RESPONSE_SIZE {
                         bail!(
-                            "can't decode send_chunk, size too low ({} < {})",
+                            "can't decode chunk_reponse, size too low ({} < {})",
                             value.len(),
                             MIN_CHUNK_RESPONSE_SIZE
                         );
@@ -177,6 +197,110 @@ impl TryFrom<&[u8]> for Command {
                     let (peers_list, _) = res;
                     Self::FindNodeResponse(peers_list)
                 }
+                PING_REQUEST => {
+                    if value.len() < MIN_PING_REQUEST_SIZE {
+                        bail!(
+                            "can't decode ping_request, size too low ({} < {})",
+                            value.len(),
+                            MIN_PING_REQUEST_SIZE
+                        );
+                    }
+                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
+                    let crc = u8_array_to_u32(&slice);
+                    Self::PingRequest(crc)
+                }
+                PING_RESPONSE => {
+                    if value.len() < MIN_PING_RESPONSE_SIZE {
+                        bail!(
+                            "can't decode ping_response, size too low ({} < {})",
+                            value.len(),
+                            MIN_PING_RESPONSE_SIZE
+                        );
+                    }
+                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
+                    let crc = u8_array_to_u32(&slice);
+                    Self::PingResponse(crc)
+                }
+                STORE_REQUEST => {
+                    if value.len() < MIN_STORE_REQUEST_SIZE {
+                        bail!(
+                            "can't decode store_request, size too low ({} < {})",
+                            value.len(),
+                            MIN_STORE_REQUEST_SIZE
+                        );
+                    }
+                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
+                    let crc = u8_array_to_u32(&slice);
+                    let raw_str = value
+                        .iter()
+                        .skip(4 + ORDER_SIZE)
+                        .map(|ch| *ch)
+                        .collect::<Vec<u8>>();
+                    let message = u8_array_to_string(raw_str.as_slice())?;
+                    Self::StoreRequest(crc, message)
+                }
+                STORE_RESPONSE => {
+                    if value.len() < MIN_STORE_RESPONSE_SIZE {
+                        bail!(
+                            "can't decode store_response, size too low ({} < {})",
+                            value.len(),
+                            MIN_STORE_RESPONSE_SIZE
+                        );
+                    }
+                    Self::StoreResponse()
+                }
+                FIND_VALUE_REQUEST => {
+                    if value.len() < MIN_FIND_VALUE_REQUEST_SIZE {
+                        bail!(
+                            "can't decode find_value_request, size too low ({} < {})",
+                            value.len(),
+                            MIN_FIND_VALUE_REQUEST_SIZE
+                        );
+                    }
+                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
+                    let key = u8_array_to_u32(&slice);
+                    Self::FindValueRequest(key)
+                }
+                FIND_VALUE_RESPONSE => {
+                    if value.len() < MIN_FIND_VALUE_RESPONSE_SIZE {
+                        bail!(
+                            "can't decode find_value_response, size too low ({} < {})",
+                            value.len(),
+                            MIN_FIND_VALUE_RESPONSE_SIZE
+                        );
+                    }
+                    let raw_str = value.iter().skip(ORDER_SIZE).map(|ch| *ch).collect::<Vec<u8>>();
+                    let message = u8_array_to_string(raw_str.as_slice())?;
+                    Self::FindValueResponse(message)
+                }
+                MESSAGE_REQUEST => {
+                    if value.len() < MIN_MESSAGE_REQUEST_SIZE {
+                        bail!(
+                            "can't decode message_request, size too low ({} < {})",
+                            value.len(),
+                            MIN_MESSAGE_REQUEST_SIZE
+                        );
+                    }
+                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
+                    let crc = u8_array_to_u32(&slice);
+                    let raw_str = value
+                        .iter()
+                        .skip(4 + ORDER_SIZE)
+                        .map(|ch| *ch)
+                        .collect::<Vec<u8>>();
+                    let message = u8_array_to_string(raw_str.as_slice())?;
+                    Self::MessageRequest(crc, message)
+                }
+                MESSAGE_RESPONSE => {
+                    if value.len() < MIN_MESSAGE_RESPONSE_SIZE {
+                        bail!(
+                            "can't decode message_response, size too low ({} < {})",
+                            value.len(),
+                            MIN_MESSAGE_RESPONSE_SIZE
+                        );
+                    }
+                    Self::MessageResponse()
+                }
 
                 // Errors
                 error if error >= ERROR_OCCURED => Self::ErrorOccured((error - ERROR_OCCURED).into()),
@@ -199,13 +323,13 @@ impl From<Command> for Vec<u8> {
                 res
             }
             Command::ChunkRequest(crc, chunk_id) => {
-                let mut res = vec![GET_CHUNK];
+                let mut res = vec![CHUNK_REQUEST];
                 res.extend(u32_to_u8_array(crc));
                 res.extend(u32_to_u8_array(chunk_id));
                 res
             }
             Command::ChunkResponse(crc, chunk_id, chunk_buf) => {
-                let mut res = vec![SEND_CHUNK];
+                let mut res = vec![CHUNK_RESPONSE];
                 res.extend(u32_to_u8_array(crc));
                 res.extend(u32_to_u8_array(chunk_id));
                 res.extend(chunk_buf);
@@ -231,6 +355,44 @@ impl From<Command> for Vec<u8> {
                     acc.extend(raw);
                     acc
                 })
+            }
+            Command::PingRequest(crc) => {
+                let mut res = vec![PING_REQUEST];
+                res.extend(u32_to_u8_array(crc));
+                res
+            }
+            Command::PingResponse(crc) => {
+                let mut res = vec![PING_RESPONSE];
+                res.extend(u32_to_u8_array(crc));
+                res
+            }
+            Command::StoreRequest(key, message) => {
+                let mut res = vec![STORE_REQUEST];
+                res.extend(u32_to_u8_array(key));
+                res.extend(string_to_u8_array(message));
+                res
+            }
+            Command::StoreResponse() => {
+                vec![STORE_RESPONSE]
+            }
+            Command::FindValueRequest(key) => {
+                let mut res = vec![FIND_VALUE_REQUEST];
+                res.extend(u32_to_u8_array(key));
+                res
+            }
+            Command::FindValueResponse(message) => {
+                let mut res = vec![FIND_VALUE_RESPONSE];
+                res.extend(string_to_u8_array(message));
+                res
+            }
+            Command::MessageRequest(target, message) => {
+                let mut res = vec![MESSAGE_REQUEST];
+                res.extend(u32_to_u8_array(target));
+                res.extend(string_to_u8_array(message));
+                res
+            }
+            Command::MessageResponse() => {
+                vec![MESSAGE_RESPONSE]
             }
 
             // Errors

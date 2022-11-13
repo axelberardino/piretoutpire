@@ -1,5 +1,5 @@
 use super::{
-    client::{handle_file_chunk, handle_file_info, handle_find_node},
+    client::{handle_file_chunk, handle_file_info, handle_find_node, handle_ping},
     command_handler::listen_to_command,
     context::Context,
 };
@@ -57,17 +57,23 @@ impl Manager {
 
     // Start to bootstrap the DHT from an entry point (any available peer).
     pub async fn bootstrap(&mut self, peer_addr: SocketAddr) -> AnyResult<()> {
-        find_closest_node(
-            Arc::clone(&self.ctx),
-            Peer {
-                id: u32::MAX,
-                addr: peer_addr,
-            },
-            self.id,
-            self.id,
-            query_find_node,
-        )
-        .await?;
+        let peer = Peer {
+            id: u32::MAX,
+            addr: peer_addr,
+        };
+
+        // As we don't know the id of the pee yet, let's ask him, and put that
+        // into our dht.
+        let target = ping(Arc::clone(&self.ctx), peer, self.id).await?;
+
+        let peer = Peer {
+            id: target,
+            addr: peer_addr,
+        };
+
+        // Ask for the entry node for ourself. He will add us into its table,
+        // then give back 4 close nodes.
+        find_closest_node(Arc::clone(&self.ctx), peer, self.id, self.id, query_find_node).await?;
         Ok(())
     }
 
@@ -164,6 +170,7 @@ where
 {
     let mut queue = vec![initial_peer];
     let mut visited = HashSet::<u32>::new();
+    visited.insert(sender); // Let's avoid ourself.
     let mut best_distance = u32::MAX;
     let mut found_peer = None::<Peer>;
 
@@ -253,6 +260,21 @@ async fn query_find_node(
     }
 
     Ok(peers)
+}
+
+// Ping a peer, and put it's id into our dht.
+async fn ping(ctx: Arc<Mutex<Context>>, peer: Peer, sender: u32) -> AnyResult<u32> {
+    let stream = Arc::new(Mutex::new(TcpStream::connect(peer.addr).await?));
+    let target = handle_ping(stream, sender).await?;
+
+    // The peer just answered us, let's add him into our dht.
+    {
+        let mut guard = ctx.lock().await;
+        let ctx = guard.deref_mut();
+        ctx.dht.add_node(target, peer.addr).await;
+    }
+
+    Ok(target)
 }
 
 #[cfg(test)]

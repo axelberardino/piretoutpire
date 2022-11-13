@@ -1,6 +1,6 @@
 use super::context::Context;
 use crate::{
-    manager::server::{serve_file_chunk, serve_file_info, serve_find_node},
+    manager::server::{serve_file_chunk, serve_file_info, serve_find_node, serve_ping},
     network::protocol::Command,
     read_all,
 };
@@ -27,12 +27,20 @@ async fn dispatch(
         Command::FileInfoRequest(crc) => serve_file_info(ctx, crc).await,
         Command::ChunkRequest(crc, chunk_id) => serve_file_chunk(ctx, crc, chunk_id).await,
         Command::FindNodeRequest(sender, target) => serve_find_node(ctx, sender_addr, sender, target).await,
+        Command::PingRequest(crc) => serve_ping(ctx, crc).await,
+        Command::StoreRequest(key, message) => todo!(),
+        Command::FindValueRequest(key) => todo!(),
+        Command::MessageRequest(key, message) => todo!(),
 
         // Client message handling, shouldn't be reach.
         Command::ChunkResponse(_, _, _)
         | Command::FileInfoResponse(_)
         | Command::FindNodeResponse(_)
-        | Command::ErrorOccured(_) => unreachable!(),
+        | Command::PingResponse(_)
+        | Command::ErrorOccured(_)
+        | Command::StoreResponse()
+        | Command::FindValueResponse(_)
+        | Command::MessageResponse() => unreachable!(),
     };
 
     let response: Vec<u8> = res_command.into();
