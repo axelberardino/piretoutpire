@@ -3,24 +3,29 @@ use super::{
     command_handler::listen_to_command,
     context::Context,
 };
-use crate::file::{file_chunk::FileChunk, torrent_file::TorrentFile};
+use crate::{
+    file::{file_chunk::FileChunk, torrent_file::TorrentFile},
+    network::protocol::Peer,
+    utils::distance,
+};
 use errors::{reexports::eyre::ContextCompat, AnyResult};
-use std::{net::SocketAddr, ops::DerefMut, path::Path, sync::Arc};
+use std::{collections::HashSet, net::SocketAddr, ops::DerefMut, path::Path, sync::Arc};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::Mutex,
 };
 
 pub struct Manager {
+    id: u32,
     addr: SocketAddr,
     ctx: Arc<Mutex<Context>>,
 }
 
 impl Manager {
     // Expect an address like: "127.0.0.1:8080".parse()
-    pub fn new(addr: SocketAddr, working_directory: String) -> Self {
-        let id = 0;
+    pub fn new(id: u32, addr: SocketAddr, working_directory: String) -> Self {
         Self {
+            id,
             addr,
             ctx: Arc::new(Mutex::new(Context::new(working_directory, id))),
         }
@@ -28,11 +33,16 @@ impl Manager {
 
     // Start to bootstrap the DHT from an entry point (any available peer).
     pub async fn bootstrap(&mut self, peer_addr: SocketAddr) -> AnyResult<()> {
-        let ctx = Arc::clone(&self.ctx);
-        let stream = Arc::new(Mutex::new(TcpStream::connect(peer_addr).await?));
-        let sender = 0;
-        let target = 42;
-        handle_find_node(ctx, stream, sender, target).await?;
+        find_closest_node(
+            Arc::clone(&self.ctx),
+            Peer {
+                id: u32::MAX,
+                addr: peer_addr,
+            },
+            self.id,
+            self.id,
+        )
+        .await?;
         Ok(())
     }
 
@@ -111,4 +121,68 @@ impl Manager {
             tokio::spawn(async move { listen_to_command(ctx, stream).await });
         }
     }
+}
+
+// Send for a requested node until finding it. Will stop if the most closest
+// ones found in a row are not closer.
+// Return either the found peer or none.
+async fn find_closest_node(
+    ctx: Arc<Mutex<Context>>,
+    initial_peer: Peer,
+    sender: u32,
+    target: u32,
+) -> AnyResult<Option<Peer>> {
+    let mut queue = vec![initial_peer];
+    let mut visited = HashSet::<u32>::new();
+    let mut best_distance = u32::MAX;
+    let mut found_peer = None::<Peer>;
+
+    loop {
+        let mut best_distance_found = false;
+        let mut next_queue = Vec::new();
+
+        for peer in queue.drain(..) {
+            if visited.contains(&peer.id) {
+                continue;
+            }
+
+            // FIXME: Parallel here
+
+            let stream = Arc::new(Mutex::new(TcpStream::connect(peer.addr).await?));
+            let mut peers = handle_find_node(stream, sender, target).await?;
+
+            // The peer just answered us, let's add him into our dht.
+            visited.insert(peer.id);
+            {
+                let mut guard = ctx.lock().await;
+                let ctx = guard.deref_mut();
+                ctx.dht.add_node(peer.id, peer.addr).await;
+            }
+
+            // Sort peers by relevancy (the closest first).
+            peers.sort_by_key(|peer| distance(peer.id, target));
+
+            // Let's check if the best peers is better than the previous hop.
+            if let Some(peer) = peers.first() {
+                let distance = distance(peer.id, target);
+                if distance < best_distance {
+                    best_distance = distance;
+                    best_distance_found = true;
+                }
+                if distance == 0 {
+                    found_peer = Some(peer.clone());
+                }
+            }
+
+            // Let's keep the 4 best nodes found.
+            next_queue.extend(peers.into_iter().take(4));
+        }
+
+        // If the next group queried didn't return a better result, we stop to hop.
+        if !best_distance_found {
+            break;
+        }
+    }
+
+    Ok(found_peer)
 }

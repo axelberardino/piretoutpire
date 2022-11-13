@@ -8,7 +8,7 @@ async fn test_add_node() -> AnyResult<()> {
 
     let mut dht = DistributedHashTable::new(0);
     assert_eq!(0, dht.len().await);
-    dht.add_node(dummy_peer.clone()).await;
+    dht.add_peer_node(dummy_peer.clone()).await;
     assert_eq!(1, dht.len().await);
 
     Ok(())
@@ -31,7 +31,7 @@ async fn test_find_node() -> AnyResult<()> {
     // ... but the sender will be added into the dht.
     assert_eq!(1, dht.len().await);
 
-    dht.add_node(PeerNode::new(0, dummy_addr)).await;
+    dht.add_peer_node(PeerNode::new(0, dummy_addr)).await;
 
     Ok(())
 }

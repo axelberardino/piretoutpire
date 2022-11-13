@@ -3,7 +3,7 @@ use crate::{
     file::{file_chunk::FileChunk, torrent_file::TorrentFile},
     network::{
         api::{find_node, get_chunk, handshake},
-        protocol::Command,
+        protocol::{Command, Peer},
     },
 };
 use errors::{bail, AnyResult};
@@ -100,24 +100,20 @@ pub async fn handle_get_chunk(
 
 // Ask for a node in the DHT.
 pub async fn handle_find_node(
-    ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
     sender: u32,
     target: u32,
-) -> AnyResult<()> {
+) -> AnyResult<Vec<Peer>> {
     let command = find_node(Arc::clone(&stream), sender, target).await?;
 
     match command {
         Command::FindNodeResponse(peers_found) => {
             eprintln!("received find node {:?}", &peers_found);
-            let mut guard = ctx.lock().await;
-            let _ctx = guard.deref_mut();
-            // ctx.dht.find_node(sender, target)
+            Ok(peers_found)
         }
-        Command::ErrorOccured(error) => eprintln!("peer return error: {}", error),
+        Command::ErrorOccured(error) => bail!("peer return error: {}", error),
         _ => bail!("Wrong command received: {:?}", command),
     }
-    Ok(())
 
     // let mut guard = stream.lock().await;
     // let (_, writer) = guard.split();

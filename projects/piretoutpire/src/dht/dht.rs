@@ -1,4 +1,5 @@
 use super::{peer_node::PeerNode, routing_table::RoutingTable};
+use std::net::SocketAddr;
 
 // The DHT is a way to handle a collaborative hash map. It allows to maintain a
 // decentralized network.
@@ -26,16 +27,21 @@ impl DistributedHashTable {
         self.routing_table.add_node(sender).await;
         res.into_iter()
     }
+
+    // Add a new node for ease of purpose in test files.
+    pub async fn add_node(&mut self, id: u32, addr: SocketAddr) {
+        self.add_peer_node(PeerNode::new(id, addr)).await;
+    }
+
+    // Add a new node for ease of purpose in test files.
+    async fn add_peer_node(&mut self, peer: PeerNode) {
+        self.routing_table.add_node(peer).await;
+    }
 }
 
 // Only exists for testing purpose.
 #[cfg(test)]
 impl DistributedHashTable {
-    // Add a new node for ease of purpose in test files.
-    async fn add_node(&mut self, peer: PeerNode) {
-        self.routing_table.add_node(peer).await;
-    }
-
     // Get the number of peer in the dht.
     async fn len(&self) -> usize {
         self.routing_table.get_all_peers().await.count()

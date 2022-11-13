@@ -54,6 +54,7 @@ pub enum Command {
     GetChunk(u32 /*crc*/, u32 /*chunk_id*/),
     SendChunk(u32 /*crc*/, u32 /*chunk_id*/, Vec<u8> /*chunk*/),
     FileInfo(FileInfo),
+
     // DHT protocol
     // PingRequest
     // PingResponse
@@ -67,7 +68,6 @@ pub enum Command {
     // GetPeers(), // 0x06 ?
     // SeendPeers(), // 0x07 ?
 }
-// TODO send host:port list ^
 
 // Convert a raw buffer into a command.
 impl TryFrom<&[u8]> for Command {
@@ -296,7 +296,7 @@ impl From<FileInfo> for Vec<u8> {
 // Peer ------------------------------------------------------------------------
 
 // Struct used to hold a peer.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Peer {
     pub id: u32,
     pub addr: SocketAddr,
