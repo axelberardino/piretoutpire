@@ -1,6 +1,9 @@
 use super::context::Context;
 use crate::{
-    manager::server::{serve_file_chunk, serve_file_info, serve_find_node, serve_ping},
+    manager::server::{
+        serve_file_chunk, serve_file_info, serve_find_node, serve_find_value, serve_message, serve_ping,
+        serve_store,
+    },
     network::protocol::Command,
     read_all,
 };
@@ -24,13 +27,13 @@ async fn dispatch(
 ) -> AnyResult<()> {
     let res_command = match request {
         // Server message handling
-        Command::FileInfoRequest(crc) => serve_file_info(ctx, crc).await,
-        Command::ChunkRequest(crc, chunk_id) => serve_file_chunk(ctx, crc, chunk_id).await,
+        Command::FileInfoRequest(crc) => serve_file_info(ctx, sender_addr, crc).await,
+        Command::ChunkRequest(crc, chunk_id) => serve_file_chunk(ctx, sender_addr, crc, chunk_id).await,
         Command::FindNodeRequest(sender, target) => serve_find_node(ctx, sender_addr, sender, target).await,
-        Command::PingRequest(crc) => serve_ping(ctx, crc).await,
-        Command::StoreRequest(key, message) => todo!(),
-        Command::FindValueRequest(key) => todo!(),
-        Command::MessageRequest(key, message) => todo!(),
+        Command::PingRequest(crc) => serve_ping(ctx, sender_addr, crc).await,
+        Command::StoreRequest(key, message) => serve_store(ctx, sender_addr, key, message).await,
+        Command::FindValueRequest(key) => serve_find_value(ctx, sender_addr, key).await,
+        Command::MessageRequest(message) => serve_message(ctx, sender_addr, message).await,
 
         // Client message handling, shouldn't be reach.
         Command::ChunkResponse(_, _, _)

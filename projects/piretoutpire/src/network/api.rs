@@ -85,3 +85,24 @@ pub async fn ping(stream: Arc<Mutex<TcpStream>>, sender: u32) -> AnyResult<Comma
     let raw_response = send_raw_unary(stream, request.as_slice()).await?;
     raw_response.as_slice().try_into()
 }
+
+// Store a value on a peer.
+pub async fn store(stream: Arc<Mutex<TcpStream>>, key: u32, value: String) -> AnyResult<Command> {
+    let request: Vec<u8> = Command::StoreRequest(key, value).into();
+    let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+    raw_response.as_slice().try_into()
+}
+
+// Search a given value on a peer.
+pub async fn find_value(stream: Arc<Mutex<TcpStream>>, key: u32) -> AnyResult<Command> {
+    let request: Vec<u8> = Command::FindValueRequest(key).into();
+    let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+    raw_response.as_slice().try_into()
+}
+
+// Send a message to a peer.
+pub async fn send_message(stream: Arc<Mutex<TcpStream>>, message: String) -> AnyResult<Command> {
+    let request: Vec<u8> = Command::MessageRequest(message).into();
+    let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+    raw_response.as_slice().try_into()
+}

@@ -2,7 +2,7 @@ use super::context::Context;
 use crate::{
     file::{file_chunk::FileChunk, torrent_file::TorrentFile},
     network::{
-        api::{file_chunk, file_info, find_node, ping},
+        api::{file_chunk, file_info, find_node, find_value, ping, send_message, store},
         protocol::{Command, Peer},
     },
 };
@@ -125,6 +125,42 @@ pub async fn handle_ping(stream: Arc<Mutex<TcpStream>>, sender: u32) -> AnyResul
             eprintln!("received ping node {:?}", target);
             Ok(target)
         }
+        Command::ErrorOccured(error) => bail!("peer return error: {}", error),
+        _ => bail!("Wrong command received: {:?}", command),
+    }
+}
+
+// Ask a peer to store a value ina given key.
+pub async fn handle_store(stream: Arc<Mutex<TcpStream>>, key: u32, value: String) -> AnyResult<()> {
+    let command = store(Arc::clone(&stream), key, value).await?;
+
+    match command {
+        Command::StoreResponse() => Ok(()),
+        Command::ErrorOccured(error) => bail!("peer return error: {}", error),
+        _ => bail!("Wrong command received: {:?}", command),
+    }
+}
+
+// Ask a peer for a store value in its kv_store, for a given key.
+pub async fn handle_find_value(stream: Arc<Mutex<TcpStream>>, key: u32) -> AnyResult<String> {
+    let command = find_value(Arc::clone(&stream), key).await?;
+
+    match command {
+        Command::FindValueResponse(message) => {
+            eprintln!("got value {:?}", message);
+            Ok(message)
+        }
+        Command::ErrorOccured(error) => bail!("peer return error: {}", error),
+        _ => bail!("Wrong command received: {:?}", command),
+    }
+}
+
+// Send a message to a peer.
+pub async fn handle_message(stream: Arc<Mutex<TcpStream>>, message: String) -> AnyResult<()> {
+    let command = send_message(Arc::clone(&stream), message).await?;
+
+    match command {
+        Command::MessageResponse() => Ok(()),
         Command::ErrorOccured(error) => bail!("peer return error: {}", error),
         _ => bail!("Wrong command received: {:?}", command),
     }

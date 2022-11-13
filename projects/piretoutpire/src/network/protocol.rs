@@ -21,7 +21,7 @@ const STORE_REQUEST_SIZE: usize = 4 + 1; // u32 + str(0+)
 const STORE_RESPONSE_SIZE: usize = 0; // just an acknowledge
 const FIND_VALUE_REQUEST_SIZE: usize = 4; // u32
 const FIND_VALUE_RESPONSE_SIZE: usize = 1; // str(0+)
-const MESSAGE_REQUEST_SIZE: usize = 4 + 1; // u32 + str(0+)
+const MESSAGE_REQUEST_SIZE: usize = 1; // u32 + str(0+)
 const MESSAGE_RESPONSE_SIZE: usize = 0; // just an acknowledge
 
 const MIN_PEER_SIZE: usize = ORDER_SIZE + PEER_SIZE;
@@ -85,7 +85,7 @@ pub enum Command {
     FindValueResponse(String /*message*/),
 
     // Message protocol
-    MessageRequest(u32 /*target*/, String /*message*/),
+    MessageRequest(String /*message*/),
     MessageResponse(),
 }
 
@@ -281,15 +281,9 @@ impl TryFrom<&[u8]> for Command {
                             MIN_MESSAGE_REQUEST_SIZE
                         );
                     }
-                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
-                    let crc = u8_array_to_u32(&slice);
-                    let raw_str = value
-                        .iter()
-                        .skip(4 + ORDER_SIZE)
-                        .map(|ch| *ch)
-                        .collect::<Vec<u8>>();
+                    let raw_str = value.iter().skip(ORDER_SIZE).map(|ch| *ch).collect::<Vec<u8>>();
                     let message = u8_array_to_string(raw_str.as_slice())?;
-                    Self::MessageRequest(crc, message)
+                    Self::MessageRequest(message)
                 }
                 MESSAGE_RESPONSE => {
                     if value.len() < MIN_MESSAGE_RESPONSE_SIZE {
@@ -385,9 +379,8 @@ impl From<Command> for Vec<u8> {
                 res.extend(string_to_u8_array(message));
                 res
             }
-            Command::MessageRequest(target, message) => {
+            Command::MessageRequest(message) => {
                 let mut res = vec![MESSAGE_REQUEST];
-                res.extend(u32_to_u8_array(target));
                 res.extend(string_to_u8_array(message));
                 res
             }
@@ -505,6 +498,7 @@ pub enum ErrorCode {
     FileNotFound = 1,
     ChunkNotFound = 2,
     InvalidChunk = 3,
+    KeyNotFound = 4,
 }
 
 impl From<u8> for ErrorCode {
@@ -513,6 +507,7 @@ impl From<u8> for ErrorCode {
             1 => Self::FileNotFound,
             2 => Self::ChunkNotFound,
             3 => Self::InvalidChunk,
+            4 => Self::KeyNotFound,
             _ => Self::Unknown,
         }
     }
@@ -525,6 +520,7 @@ impl Display for ErrorCode {
             ErrorCode::FileNotFound => write!(fmt, "file not found"),
             ErrorCode::ChunkNotFound => write!(fmt, "chunk not found"),
             ErrorCode::InvalidChunk => write!(fmt, "invalid chunk"),
+            ErrorCode::KeyNotFound => write!(fmt, "key not found"),
         }
     }
 }

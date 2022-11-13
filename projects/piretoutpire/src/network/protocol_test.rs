@@ -374,22 +374,20 @@ fn test_find_value_response_protocol() -> AnyResult<()> {
 
 #[test]
 fn test_message_request_protocol() -> AnyResult<()> {
-    let cmd = Command::MessageRequest(1234, "hello".to_owned());
+    let cmd = Command::MessageRequest("hello".to_owned());
     let raw_buf: Vec<u8> = cmd.into();
     let raw_buf = raw_buf.as_slice();
 
     #[rustfmt::skip]
     assert_eq!(&[
             13,
-            0, 0, 4, 210,
             0, 0, 0, 5, 104, 101, 108, 108, 111
         ],
         raw_buf
     );
 
     match Command::try_from(raw_buf)? {
-        Command::MessageRequest(key, message) => {
-            assert_eq!(1234, key);
+        Command::MessageRequest(message) => {
             assert_eq!("hello", message);
         }
         _ => panic!(),

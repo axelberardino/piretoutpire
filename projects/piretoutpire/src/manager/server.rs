@@ -9,8 +9,8 @@ use tokio::sync::Mutex;
 // Server API ------------------------------------------------------------------
 
 // FIXME: rename? Handle handshake.
-pub async fn serve_file_info(ctx: Arc<Mutex<Context>>, crc: u32) -> Command {
-    eprintln!("handshake, ask for crc {}", crc);
+pub async fn serve_file_info(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, crc: u32) -> Command {
+    eprintln!("file_info received from {}({})", crc, sender_addr);
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();
 
@@ -29,8 +29,16 @@ pub async fn serve_file_info(ctx: Arc<Mutex<Context>>, crc: u32) -> Command {
 }
 
 // Serve chunk asked by a client.
-pub async fn serve_file_chunk(ctx: Arc<Mutex<Context>>, crc: u32, chunk_id: u32) -> Command {
-    eprintln!("applying file_chunk {}/{}", crc, chunk_id);
+pub async fn serve_file_chunk(
+    ctx: Arc<Mutex<Context>>,
+    sender_addr: SocketAddr,
+    crc: u32,
+    chunk_id: u32,
+) -> Command {
+    eprintln!(
+        "file_chunk received from {} asking for {}/{}",
+        sender_addr, crc, chunk_id
+    );
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();
 
@@ -76,11 +84,45 @@ pub async fn serve_find_node(
 }
 
 // Received the sender id, and response with this server id.
-pub async fn serve_ping(ctx: Arc<Mutex<Context>>, crc: u32) -> Command {
+pub async fn serve_ping(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, crc: u32) -> Command {
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();
 
     let own_id = ctx.dht.id();
-    eprintln!("received ping from {}, sending {}", crc, own_id);
+    eprintln!("received ping from {}({}), sending {}", crc, sender_addr, own_id);
     Command::PingResponse(own_id)
+}
+
+// Allow a client to put a value inside this server.
+pub async fn serve_store(
+    ctx: Arc<Mutex<Context>>,
+    sender_addr: SocketAddr,
+    key: u32,
+    message: String,
+) -> Command {
+    eprintln!("received store from ({}) for {}={}", sender_addr, key, message);
+    let mut guard = ctx.lock().await;
+    let ctx = guard.deref_mut();
+
+    //FIXME
+
+    Command::StoreResponse()
+}
+
+// Allow a client to put a value inside this server.
+pub async fn serve_find_value(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, key: u32) -> Command {
+    let mut guard = ctx.lock().await;
+    let ctx = guard.deref_mut();
+
+    //FIXME + ErrorOccured(KeyNotFound)
+    let msg = "FIXME".to_owned();
+    eprintln!("received find_value from ({}) for {}={}", sender_addr, key, msg);
+
+    Command::FindValueResponse(msg)
+}
+
+// Display the message the user send.
+pub async fn serve_message(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, message: String) -> Command {
+    eprintln!("{} send us this message {}", sender_addr, message);
+    Command::MessageResponse()
 }
