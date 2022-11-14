@@ -1,6 +1,9 @@
-use crate::utils::{
-    addr_to_u8_array, string_to_u8_array, u32_to_u8_array, u8_array_to_addr, u8_array_to_string,
-    u8_array_to_u32,
+use crate::{
+    dht::peer_node::PeerNode,
+    utils::{
+        addr_to_u8_array, string_to_u8_array, u32_to_u8_array, u8_array_to_addr, u8_array_to_string,
+        u8_array_to_u32,
+    },
 };
 use errors::{bail, AnyError};
 use std::{fmt::Display, net::SocketAddr};
@@ -486,6 +489,15 @@ impl From<Peer> for Vec<u8> {
         res.extend(u32_to_u8_array(value.id));
         res.extend(addr_to_u8_array(value.addr));
         res
+    }
+}
+
+impl From<PeerNode> for Peer {
+    fn from(value: PeerNode) -> Self {
+        Self {
+            id: value.id(),
+            addr: value.addr(),
+        }
     }
 }
 

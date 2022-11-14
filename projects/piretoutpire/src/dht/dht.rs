@@ -50,12 +50,18 @@ impl DistributedHashTable {
 
     // Search for the closest peer.
     pub async fn find_closest_peer(&self, target: u32) -> Option<PeerNode> {
-        let mut res = self
+        let mut res = self.find_closest_peers(target, 1).await.collect::<Vec<_>>();
+        res.pop()
+    }
+
+    // Search for the N closest peers.
+    pub async fn find_closest_peers(&self, target: u32, nb: usize) -> impl Iterator<Item = PeerNode> {
+        let res = self
             .routing_table
-            .get_closest_peers_from(target, 1)
+            .get_closest_peers_from(target, nb)
             .await
             .collect::<Vec<_>>();
-        res.pop()
+        res.into_iter()
     }
 
     // Add a new node for ease of purpose in test files.

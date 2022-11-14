@@ -106,7 +106,7 @@ impl Manager {
             addr: peer_addr,
         };
 
-        // As we don't know the id of the pee yet, let's ask him, and put that
+        // As we don't know the id of the peer yet, let's ask him, and put that
         // into our dht.
         let target = ping(Arc::clone(&self.ctx), peer, self.id).await?;
 
@@ -129,6 +129,56 @@ impl Manager {
         Ok(())
     }
 
+    // Find node will try to return the wanted peer, or the 4 most closest ones
+    // if he's not found.
+    pub async fn find_node(&mut self, target: u32) -> AnyResult<Vec<Peer>> {
+        // Get the closest possible node from the target, to start the search.
+        let peer = {
+            let guard = self.ctx.lock().await;
+            let ctx = guard.deref();
+            ctx.dht
+                .find_closest_peer(target)
+                .await
+                .filter(|peer| peer.id() == target)
+        };
+
+        match peer {
+            Some(peer) if peer.id() == target => {
+                // We already have it, so no need to make any RPC
+                Ok(vec![peer.into()])
+            }
+            Some(peer) => {
+                // Let's start the search
+                let found = find_closest_node(
+                    Arc::clone(&self.ctx),
+                    peer.into(),
+                    self.id,
+                    target,
+                    self.max_hop,
+                    query_find_node,
+                )
+                .await?;
+                match found {
+                    Some(peer) => Ok(vec![peer]),
+                    None => {
+                        let guard = self.ctx.lock().await;
+                        let ctx = guard.deref();
+                        Ok(ctx
+                            .dht
+                            .find_closest_peers(target, 4)
+                            .await
+                            .map(Into::into)
+                            .collect())
+                    }
+                }
+            }
+            None => {
+                // No local peer to start the search.
+                Ok(vec![])
+            }
+        }
+    }
+
     // Ping a peer by its id. Return if we know the peer.
     pub async fn ping(&self, target: u32) -> AnyResult<bool> {
         let peer = {
@@ -141,15 +191,7 @@ impl Manager {
         };
 
         if let Some(peer) = peer {
-            ping(
-                Arc::clone(&self.ctx),
-                Peer {
-                    id: peer.id(),
-                    addr: peer.addr(),
-                },
-                self.id,
-            )
-            .await?;
+            ping(Arc::clone(&self.ctx), peer.into(), self.id).await?;
             Ok(true)
         } else {
             Ok(false)
@@ -169,10 +211,7 @@ impl Manager {
                 // We don't have this peer, let's try to find it.
                 find_closest_node(
                     Arc::clone(&self.ctx),
-                    Peer {
-                        id: peer.id(),
-                        addr: peer.addr(),
-                    },
+                    peer.into(),
                     self.id,
                     self.id,
                     self.max_hop,
