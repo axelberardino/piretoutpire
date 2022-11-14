@@ -166,8 +166,10 @@ impl BucketTree {
             if result == InsertResult::Succeed {
                 return InsertResult::Succeed;
             }
+
+            // We're too deep in the tree, the next bucket can't be created.
             if end - start <= BUCKET_SIZE as u32 {
-                return InsertResult::Succeed;
+                return InsertResult::NoRoom;
             }
 
             rc_tree_node = new_node;

@@ -17,6 +17,7 @@ pub struct DistributedHashTable {
 struct Config {
     id: u32,
     peers: Vec<PeerNode>,
+    peers_lru: Vec<PeerNode>,
     kv_store: HashMap<u32, String>,
 }
 
@@ -87,6 +88,11 @@ impl DistributedHashTable {
         let config = Config {
             id: self.id,
             peers: self.routing_table.get_all_peers().await.collect(),
+            peers_lru: self
+                .routing_table
+                .get_recent_peers_cache()
+                .map(Clone::clone)
+                .collect(),
             kv_store: self.kv_store.clone(),
         };
 
@@ -108,7 +114,7 @@ impl DistributedHashTable {
 
         self.clean().await;
         self.id = config.id;
-        for peer in config.peers {
+        for peer in config.peers.into_iter().chain(config.peers_lru.into_iter()) {
             self.add_peer_node(peer).await;
         }
         self.kv_store = config.kv_store;

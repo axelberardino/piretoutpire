@@ -357,6 +357,29 @@ async fn test_find_node_max_roundtrip_in_a_big_mock_not_found() -> AnyResult<()>
         assert_eq!(vec![1, 34, 43, 60, 62], ctx.dht.peer_ids().await);
     }
 
+    {
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender, true)));
+        let res = find_closest_node(
+            Arc::clone(&ctx),
+            Peer {
+                id: starting_from,
+                addr: "127.0.0.1:4000".parse()?,
+            },
+            sender,
+            target,
+            Some(u32::MAX),
+            mocked_query_find_node_big,
+        )
+        .await?;
+        // Will be not found, closest should be 43.
+        assert!(res.is_none());
+
+        let mut guard = ctx.lock().await;
+        let ctx = guard.deref_mut();
+        // 49 is there thanks to the lru cache.
+        assert_eq!(vec![1, 34, 43, 49, 60, 62], ctx.dht.peer_ids().await);
+    }
+
     Ok(())
 }
 

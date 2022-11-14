@@ -13,7 +13,7 @@ pub struct RoutingTable {
     id: u32,
     bucket_tree: BucketTree,
     recent_peers_cache_enabled: bool,
-    latest_too_far_nodes: VecDeque<PeerNode>,
+    latest_too_far_peers: VecDeque<PeerNode>,
 }
 
 impl RoutingTable {
@@ -24,7 +24,7 @@ impl RoutingTable {
             id,
             bucket_tree: BucketTree::new(),
             recent_peers_cache_enabled: true,
-            latest_too_far_nodes: VecDeque::new(),
+            latest_too_far_peers: VecDeque::new(),
         }
     }
 
@@ -36,6 +36,11 @@ impl RoutingTable {
         self.recent_peers_cache_enabled = value;
     }
 
+    // Get the peers lru cache
+    pub fn get_recent_peers_cache(&self) -> impl Iterator<Item = &PeerNode> {
+        self.latest_too_far_peers.iter()
+    }
+
     // Clean the routing table.
     pub async fn clean(&mut self) {
         self.bucket_tree = BucketTree::new();
@@ -45,30 +50,34 @@ impl RoutingTable {
     pub async fn add_node(&mut self, mut peer: PeerNode) {
         peer.set_id(distance(peer.id(), self.id));
         if let InsertResult::NoRoom = self.bucket_tree.add_peer_node(peer.clone()).await {
-            self.latest_too_far_nodes.push_front(peer);
-            if self.latest_too_far_nodes.len() > 100 {
-                self.latest_too_far_nodes.pop_back();
+            if self.recent_peers_cache_enabled {
+                self.latest_too_far_peers.push_front(peer);
+                if self.latest_too_far_peers.len() > 100 {
+                    self.latest_too_far_peers.pop_back();
+                }
             }
         }
     }
 
     // Get all peers in this routing table.
-    // FIXME: collect() followed by into_iter, not great
-    pub async fn get_all_peers(&self) -> impl Iterator<Item = PeerNode> {
+    pub async fn get_all_peers(&self) -> impl Iterator<Item = PeerNode> + '_ {
         self.bucket_tree
             .get_all_peers()
             .await
+            .chain(self.latest_too_far_peers.iter().map(Clone::clone))
             .map(|mut peer| {
                 peer.set_id(distance(peer.id(), self.id));
                 peer
             })
-            .collect::<Vec<_>>()
-            .into_iter()
     }
 
     // Get the closest peers from a given target.
     pub async fn get_closest_peers_from(&self, target: u32, nb: usize) -> impl Iterator<Item = PeerNode> {
-        let mut peers = self.get_all_peers().await.collect::<Vec<_>>();
+        let mut peers = self
+            .get_all_peers()
+            .await
+            .chain(self.latest_too_far_peers.iter().map(Clone::clone))
+            .collect::<Vec<_>>();
         peers.sort_by_key(|peer| distance(peer.id(), target));
         peers.into_iter().take(nb)
     }
