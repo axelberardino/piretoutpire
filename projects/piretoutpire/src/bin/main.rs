@@ -1,6 +1,7 @@
 use clap::{ArgEnum, Parser};
 use errors::AnyResult;
 use piretoutpire::manager::manager::Manager;
+use rand::Rng;
 use std::path::Path;
 
 #[derive(Parser)]
@@ -9,9 +10,17 @@ use std::path::Path;
 
 struct Cli {
     /// Server host:port
-    #[clap(default_value_t = String::from("localhost:4000"))]
+    #[clap(default_value_t = String::from("127.0.0.1:4000"))]
     #[clap(long, value_name = "host:port")]
-    server: String,
+    server_addr: String,
+
+    /// Node id (empty = random)
+    #[clap(long, value_name = "node_id")]
+    node_id: Option<u32>,
+
+    /// Max hop (empty = default behavior, search until not closer)
+    #[clap(long, value_name = "max_hop")]
+    max_hop: Option<u32>,
 
     /// What mode to run the program in
     #[clap(arg_enum)]
@@ -23,25 +32,36 @@ struct Cli {
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, Debug)]
 enum QueryType {
-    Seeder,
-    Leecher,
+    Seed,
+    Leech,
+}
+
+// Generate a random node id.
+fn get_random_id() -> u32 {
+    let mut rng = rand::thread_rng();
+    rng.gen::<u32>()
 }
 
 #[tokio::main]
 async fn main() -> AnyResult<()> {
     let args = Cli::parse();
+    let node_id = args.node_id.unwrap_or_else(|| get_random_id());
+    eprintln!("Node ID is: {}", node_id);
 
     match &args.query_type {
-        QueryType::Seeder => {
-            let server_own_addr = "127.0.0.1:4000".parse()?;
-            let mut manager = Manager::new(0, server_own_addr, "/tmp/seeder".to_owned());
+        QueryType::Seed => {
+            let addr = args.server_addr.parse()?;
+            let node_id = 0; // FIXME temp override
+            let mut manager = Manager::new(node_id, addr, "/tmp/seeder".to_owned());
+            // FIXME, load_dir
             manager.load_file("/tmp/seeder/toto.txt").await?;
             manager.start_server().await?;
         }
-        QueryType::Leecher => {
+        QueryType::Leech => {
             let own_addr = "127.0.0.1:4001".parse()?;
             let peer_addr = "127.0.0.1:4000".parse()?;
             let mut manager = Manager::new(1, own_addr, "/tmp/leecher".to_owned());
+            manager.set_max_hop(args.max_hop);
             if manager.load_dht(Path::new("/tmp/dht")).await.is_err() {
                 eprintln!("can't find dht file");
             }

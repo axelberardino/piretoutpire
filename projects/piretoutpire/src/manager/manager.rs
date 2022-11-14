@@ -10,7 +10,6 @@ use crate::{
 };
 use errors::{reexports::eyre::ContextCompat, AnyError, AnyResult};
 use std::{
-    any::Any,
     collections::HashSet,
     future::Future,
     net::SocketAddr,
@@ -28,6 +27,7 @@ pub struct Manager {
     id: u32,
     addr: SocketAddr,
     ctx: Arc<Mutex<Context>>,
+    max_hop: Option<u32>,
 }
 
 impl Manager {
@@ -37,7 +37,15 @@ impl Manager {
             id,
             addr,
             ctx: Arc::new(Mutex::new(Context::new(working_directory, id))),
+            max_hop: None,
         }
+    }
+
+    // Set the max hop possible when searchin for a node.
+    // None = default behavior (stop when no closest host is found).
+    // N = force to hop N times even if not the best route.
+    pub fn set_max_hop(&mut self, max_hop: Option<u32>) {
+        self.max_hop = max_hop;
     }
 
     // Dump the dht into a file.
@@ -74,7 +82,15 @@ impl Manager {
 
         // Ask for the entry node for ourself. He will add us into its table,
         // then give back 4 close nodes.
-        find_closest_node(Arc::clone(&self.ctx), peer, self.id, self.id, query_find_node).await?;
+        find_closest_node(
+            Arc::clone(&self.ctx),
+            peer,
+            self.id,
+            self.id,
+            self.max_hop,
+            query_find_node,
+        )
+        .await?;
         Ok(())
     }
 
@@ -97,6 +113,7 @@ impl Manager {
                     },
                     self.id,
                     self.id,
+                    self.max_hop,
                     query_find_node,
                 )
                 .await?;
@@ -199,12 +216,14 @@ async fn find_closest_node<F, T>(
     initial_peer: Peer,
     sender: u32,
     target: u32,
-    mut query_func: F,
+    max_hop: Option<u32>,
+    query_func: F,
 ) -> AnyResult<Option<Peer>>
 where
     F: FnMut(Arc<Mutex<Context>>, Peer, u32, u32) -> T + Send + Copy + 'static,
     T: Future<Output = AnyResult<Vec<Peer>>> + Send + 'static,
 {
+    let mut hop = 0;
     let mut queue = vec![initial_peer];
     let mut visited = HashSet::<u32>::new();
     visited.insert(sender); // Let's avoid ourself.
@@ -212,44 +231,30 @@ where
     let mut found_peer = None::<Peer>;
 
     loop {
-        let mut best_distance_found = false;
-        let mut next_queue = Vec::new();
+        hop += 1;
 
-        // Just launch 3 concurrent tasks.
-        let mut queries = Vec::new();
-        let nb_batch = std::cmp::min(queue.len(), 3);
-        for peer in queue.drain(..nb_batch) {
-            if visited.contains(&peer.id) {
-                continue;
-            }
+        // Just launch 3 find_node at the same time, with the first 3
+        // non-visited peers in the queue. Will drain peer from the queue, until
+        // the queue is empty or 3 non visited has been queried.
+        // Will responsd with a queue containing from 0 up to 3*4 uniques nodes.
+        let next_queue = parallel_find_node(
+            Arc::clone(&ctx),
+            sender,
+            target,
+            &mut queue,
+            &mut visited,
+            query_func,
+            3,
+        )
+        .await?;
 
-            let ctx = Arc::clone(&ctx);
-            let handle = tokio::spawn(async move {
-                let peer_id = peer.id;
-                let peers = query_func(ctx, peer, sender, target).await?;
-                Ok::<(u32, Vec<Peer>), AnyError>((peer_id, peers))
-            });
-
-            queries.push(handle);
-        }
-
-        // Now wait for all tasks to complete and put result in queue.
-        for handle in queries {
-            let (peer_id, peers) = handle.await??;
-            visited.insert(peer_id);
-            // Let's keep the 4 best nodes found.
-            next_queue.extend(peers.into_iter());
-        }
-
-        // Sort peers by relevancy (the closest first)
-        next_queue.sort_by_key(|peer| distance(peer.id, target));
-        next_queue.dedup_by_key(|peer| peer.id);
         dbg!(next_queue
             .iter()
             .map(|x| (x.id, distance(x.id, target)))
             .collect::<Vec<_>>());
 
         // Let's check if the best peers is better than the previous hop.
+        let mut better_distance_found = false;
         if let Some(peer) = next_queue.first() {
             let distance = distance(peer.id, target);
             println!(
@@ -259,24 +264,107 @@ where
             dbg!(best_distance, distance, peer.id, target);
             if distance < best_distance {
                 best_distance = distance;
-                best_distance_found = true;
+                better_distance_found = true;
             }
             if distance == 0 {
                 found_peer = Some(peer.clone());
             }
         }
 
-        // If the next group queried didn't return a better result, we stop to hop.
-        if !best_distance_found {
-            break;
-        }
         queue.extend(next_queue);
+        // Now let's sort the queue putting the best at the end (easier for
+        // poping values).
         queue.sort_by_key(|peer| distance(peer.id, target));
+        queue.reverse();
         queue.dedup_by_key(|peer| peer.id);
         dbg!(&queue);
+
+        // Handle strategy here.
+        if let Some(max_hop) = max_hop {
+            // If we found the exact peer, put it in our dht, and stop searching.
+            if let Some(peer) = &found_peer {
+                let mut guard = ctx.lock().await;
+                let ctx = guard.deref_mut();
+                ctx.dht.add_node(peer.id, peer.addr).await;
+                break;
+            }
+            // Hop strategy: stop after doing N hops, or if we found the target.
+            // If all nodes have been visited, also stop.
+            if hop >= max_hop || queue.is_empty() {
+                break;
+            }
+        } else {
+            // Classic strategy: stop when the next route is not closer to the
+            // target than this one.
+            // If the next group queried didn't return a better result, we stop
+            // to hop.
+            if !better_distance_found {
+                break;
+            }
+        }
     }
 
     Ok(found_peer)
+}
+
+// Will drain N values from the main task queues, launch them in parallel, then
+// return a flatten results of peers. Peers will be sorted by relevancy (closest
+// first).
+async fn parallel_find_node<F, T>(
+    ctx: Arc<Mutex<Context>>,
+    sender: u32,
+    target: u32,
+    queue: &mut Vec<Peer>,
+    visited: &mut HashSet<u32>,
+    mut query_func: F,
+    nb_parallel: usize,
+) -> AnyResult<Vec<Peer>>
+where
+    F: FnMut(Arc<Mutex<Context>>, Peer, u32, u32) -> T + Send + Copy + 'static,
+    T: Future<Output = AnyResult<Vec<Peer>>> + Send + 'static,
+{
+    let mut next_queue = Vec::new();
+
+    // Just launch 3 concurrent tasks.
+    let mut queries = Vec::new();
+    let mut nb_tasks = 0;
+
+    while let Some(peer) = queue.pop() {
+        if visited.contains(&peer.id) {
+            continue;
+        }
+
+        nb_tasks += 1;
+        let ctx = Arc::clone(&ctx);
+        let handle = tokio::spawn(async move {
+            let peer_id = peer.id;
+            let peers = query_func(ctx, peer, sender, target).await?;
+            Ok::<(u32, Vec<Peer>), AnyError>((peer_id, peers))
+        });
+
+        queries.push(handle);
+        if nb_tasks >= nb_parallel {
+            break;
+        }
+    }
+
+    // Now wait for all tasks to complete and put result in a queue.
+    for handle in queries {
+        let (peer_id, peers) = handle.await??;
+        visited.insert(peer_id);
+        // Let's keep the 4 best nodes found.
+        next_queue.extend(peers.into_iter());
+    }
+
+    // Keep only non-visited nodes.
+    dbg!(&next_queue);
+    next_queue.retain(|peer| !visited.contains(&peer.id));
+
+    // Sort peers by relevancy (the closest first)
+    next_queue.sort_by_key(|peer| distance(peer.id, target));
+    next_queue.dedup_by_key(|peer| peer.id);
+
+    Ok(next_queue)
 }
 
 // Query the distant nodes and update the current context.

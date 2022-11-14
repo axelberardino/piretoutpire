@@ -93,7 +93,7 @@ async fn mocked_query_find_node_partial(
     peers.insert(4, vec![13, 15, 1, 6, 5]);
     peers.insert(5, vec![12, 13, 15, 1, 6]);
     peers.insert(6, vec![12, 13, 15, 1, 4, 5]);
-    peers.insert(12, vec![18, 19, 1, 4, 5, 6, 15, 13]);
+    peers.insert(12, vec![18, 19, 4, 5]);
     peers.insert(13, vec![16, 18, 19, 1, 4, 5, 6, 15, 12]);
     peers.insert(15, vec![16, 18, 19, 1, 4, 5, 6, 12, 13]);
     peers.insert(16, vec![34, 43, 49, 60, 1, 4, 5, 6, 18, 19]);
@@ -115,19 +115,39 @@ async fn test_find_node_itself() -> AnyResult<()> {
     let starting_from = 0;
     let target = 0;
 
-    let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
-    let res = find_closest_node(
-        ctx,
-        Peer {
-            id: starting_from,
-            addr: "127.0.0.1:4000".parse()?,
-        },
-        sender,
-        target,
-        mocked_query_find_node_small,
-    )
-    .await?;
-    assert!(res.is_none());
+    {
+        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let res = find_closest_node(
+            ctx,
+            Peer {
+                id: starting_from,
+                addr: "127.0.0.1:4000".parse()?,
+            },
+            sender,
+            target,
+            None,
+            mocked_query_find_node_small,
+        )
+        .await?;
+        assert!(res.is_none());
+    }
+
+    {
+        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let res = find_closest_node(
+            ctx,
+            Peer {
+                id: starting_from,
+                addr: "127.0.0.1:4000".parse()?,
+            },
+            sender,
+            target,
+            Some(u32::MAX),
+            mocked_query_find_node_small,
+        )
+        .await?;
+        assert!(res.is_none());
+    }
 
     Ok(())
 }
@@ -138,23 +158,48 @@ async fn test_find_node_1_roundtrip() -> AnyResult<()> {
     let starting_from = 1;
     let target = 2;
 
-    let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
-    let res = find_closest_node(
-        Arc::clone(&ctx),
-        Peer {
-            id: starting_from,
-            addr: "127.0.0.1:4000".parse()?,
-        },
-        sender,
-        target,
-        mocked_query_find_node_small,
-    )
-    .await?;
-    assert_eq!(target, res.expect("should be there").id);
+    {
+        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let res = find_closest_node(
+            Arc::clone(&ctx),
+            Peer {
+                id: starting_from,
+                addr: "127.0.0.1:4000".parse()?,
+            },
+            sender,
+            target,
+            None,
+            mocked_query_find_node_small,
+        )
+        .await?;
+        assert_eq!(target, res.expect("should be there").id);
 
-    let mut guard = ctx.lock().await;
-    let ctx = guard.deref_mut();
-    assert_eq!(vec![1, 2, 3, 5], ctx.dht.peer_ids().await);
+        let mut guard = ctx.lock().await;
+        let ctx = guard.deref_mut();
+        assert_eq!(vec![1, 2, 3, 5], ctx.dht.peer_ids().await);
+    }
+
+    {
+        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let res = find_closest_node(
+            Arc::clone(&ctx),
+            Peer {
+                id: starting_from,
+                addr: "127.0.0.1:4000".parse()?,
+            },
+            sender,
+            target,
+            Some(u32::MAX),
+            mocked_query_find_node_small,
+        )
+        .await?;
+        assert_eq!(target, res.expect("should be there").id);
+
+        let mut guard = ctx.lock().await;
+        let ctx = guard.deref_mut();
+        assert_eq!(vec![1, 2], ctx.dht.peer_ids().await);
+    }
+
     Ok(())
 }
 
@@ -164,19 +209,40 @@ async fn test_find_node_max_roundtrip() -> AnyResult<()> {
     let starting_from = 8;
     let target = 1;
 
-    let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
-    let res = find_closest_node(
-        Arc::clone(&ctx),
-        Peer {
-            id: starting_from,
-            addr: "127.0.0.1:4000".parse()?,
-        },
-        sender,
-        target,
-        mocked_query_find_node_small,
-    )
-    .await?;
-    assert_eq!(target, res.expect("should be there").id);
+    {
+        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let res = find_closest_node(
+            Arc::clone(&ctx),
+            Peer {
+                id: starting_from,
+                addr: "127.0.0.1:4000".parse()?,
+            },
+            sender,
+            target,
+            None,
+            mocked_query_find_node_small,
+        )
+        .await?;
+        assert_eq!(target, res.expect("should be there").id);
+    }
+
+    {
+        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let res = find_closest_node(
+            Arc::clone(&ctx),
+            Peer {
+                id: starting_from,
+                addr: "127.0.0.1:4000".parse()?,
+            },
+            sender,
+            target,
+            Some(u32::MAX),
+            mocked_query_find_node_small,
+        )
+        .await?;
+        assert_eq!(target, res.expect("should be there").id);
+    }
+
     Ok(())
 }
 
@@ -186,30 +252,54 @@ async fn test_find_node_unbalanced_roundtrip() -> AnyResult<()> {
     let starting_from = 1;
     let target = 8;
 
-    let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
-    let res = find_closest_node(
-        Arc::clone(&ctx),
-        Peer {
-            id: starting_from,
-            addr: "127.0.0.1:4000".parse()?,
-        },
-        sender,
-        target,
-        mocked_query_find_node_small,
-    )
-    .await?;
-    // 8 is there, and there is a path to it.
-    // Although, very few nodes knows about it, and finding nodes is quickly
-    // interrupted because the distance is too far away.
-    // Distance would look like this:
-    // 9 --- 10
-    // | \  /
-    // 13 11 - [12] - 15
-    //     \        |
-    // 1   14       0
-    //
-    // Meaning it will block at node 12 because it's not closer than the best (10).
-    assert!(res.is_none());
+    {
+        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let res = find_closest_node(
+            Arc::clone(&ctx),
+            Peer {
+                id: starting_from,
+                addr: "127.0.0.1:4000".parse()?,
+            },
+            sender,
+            target,
+            None,
+            mocked_query_find_node_small,
+        )
+        .await?;
+        // 8 is there, and there is a path to it.
+        // Although, very few nodes knows about it, and finding nodes is quickly
+        // interrupted because the distance is too far away.
+        // Distance would look like this:
+        // 9 --- 10
+        // | \  /
+        // 13 11 - [12] - 15
+        //     \        |
+        // 1   14       0
+        //
+        // Meaning it will block at node 12 because it's not closer than the best (10).
+        assert!(res.is_none());
+    }
+
+    {
+        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let res = find_closest_node(
+            Arc::clone(&ctx),
+            Peer {
+                id: starting_from,
+                addr: "127.0.0.1:4000".parse()?,
+            },
+            sender,
+            target,
+            Some(u32::MAX),
+            mocked_query_find_node_small,
+        )
+        .await?;
+        // Using the hop strategy, we will succed to find the node, we would
+        // have missed with the classic algorithm in a graph with few
+        // participants.
+        assert_eq!(target, res.expect("should be there").id);
+    }
+
     Ok(())
 }
 
@@ -219,26 +309,53 @@ async fn test_find_node_max_roundtrip_in_a_big_mock_not_found() -> AnyResult<()>
     let starting_from = 1;
     let target = 47;
 
-    let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
-    let res = find_closest_node(
-        Arc::clone(&ctx),
-        Peer {
-            id: starting_from,
-            addr: "127.0.0.1:4000".parse()?,
-        },
-        sender,
-        target,
-        mocked_query_find_node_big,
-    )
-    .await?;
-    // Will be not found, closest should be 43.
-    assert!(res.is_none());
+    {
+        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let res = find_closest_node(
+            Arc::clone(&ctx),
+            Peer {
+                id: starting_from,
+                addr: "127.0.0.1:4000".parse()?,
+            },
+            sender,
+            target,
+            None,
+            mocked_query_find_node_big,
+        )
+        .await?;
+        // Will be not found, closest should be 43.
+        assert!(res.is_none());
 
-    let mut guard = ctx.lock().await;
-    let ctx = guard.deref_mut();
-    // Node 1 (starting point) and its next 3 nodes (34, 43, 60) should be added
-    // in the dht.
-    assert_eq!(vec![1, 34, 43, 60], ctx.dht.peer_ids().await);
+        let mut guard = ctx.lock().await;
+        let ctx = guard.deref_mut();
+        // Node 1 (starting point) and its next 3 nodes (34, 43, 60) should be added
+        // in the dht.
+        assert_eq!(vec![1, 34, 43, 60], ctx.dht.peer_ids().await);
+    }
+
+    {
+        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let res = find_closest_node(
+            Arc::clone(&ctx),
+            Peer {
+                id: starting_from,
+                addr: "127.0.0.1:4000".parse()?,
+            },
+            sender,
+            target,
+            Some(u32::MAX),
+            mocked_query_find_node_big,
+        )
+        .await?;
+        // Will be not found, closest should be 43.
+        assert!(res.is_none());
+
+        let mut guard = ctx.lock().await;
+        let ctx = guard.deref_mut();
+        // Should be [1, 34, 43, 49, 60, 62], but the routing table is full so
+        // 49 is not added.
+        assert_eq!(vec![1, 34, 43, 60, 62], ctx.dht.peer_ids().await);
+    }
 
     Ok(())
 }
@@ -249,26 +366,52 @@ async fn test_find_node_max_roundtrip_in_a_big_mock_found() -> AnyResult<()> {
     let starting_from = 1;
     let target = 43;
 
-    let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
-    let res = find_closest_node(
-        Arc::clone(&ctx),
-        Peer {
-            id: starting_from,
-            addr: "127.0.0.1:4000".parse()?,
-        },
-        sender,
-        target,
-        mocked_query_find_node_big,
-    )
-    .await?;
-    // 43 will be found!
-    assert_eq!(target, res.expect("should be there").id);
+    {
+        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let res = find_closest_node(
+            Arc::clone(&ctx),
+            Peer {
+                id: starting_from,
+                addr: "127.0.0.1:4000".parse()?,
+            },
+            sender,
+            target,
+            None,
+            mocked_query_find_node_big,
+        )
+        .await?;
+        // 43 will be found!
+        assert_eq!(target, res.expect("should be there").id);
 
-    let mut guard = ctx.lock().await;
-    let ctx = guard.deref_mut();
-    // Node 1 (starting point) and its next 3 nodes (34, 43, 60) should be added
-    // in the dht.
-    assert_eq!(vec![1, 34, 43, 60], ctx.dht.peer_ids().await);
+        let mut guard = ctx.lock().await;
+        let ctx = guard.deref_mut();
+        // Node 1 (starting point) and its next 3 nodes (34, 43, 60) should be added
+        // in the dht.
+        assert_eq!(vec![1, 34, 43, 60], ctx.dht.peer_ids().await);
+    }
+
+    {
+        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let res = find_closest_node(
+            Arc::clone(&ctx),
+            Peer {
+                id: starting_from,
+                addr: "127.0.0.1:4000".parse()?,
+            },
+            sender,
+            target,
+            Some(u32::MAX),
+            mocked_query_find_node_big,
+        )
+        .await?;
+        // 43 will be found!
+        assert_eq!(target, res.expect("should be there").id);
+
+        let mut guard = ctx.lock().await;
+        let ctx = guard.deref_mut();
+        // Node 1 (starting point) and only the found node.
+        assert_eq!(vec![1, 43], ctx.dht.peer_ids().await);
+    }
 
     Ok(())
 }
@@ -279,26 +422,51 @@ async fn test_find_node_max_roundtrip_in_a_partial_mock_found() -> AnyResult<()>
     let starting_from = 1;
     let target = 43;
 
-    let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
-    let res = find_closest_node(
-        Arc::clone(&ctx),
-        Peer {
-            id: starting_from,
-            addr: "127.0.0.1:4000".parse()?,
-        },
-        sender,
-        target,
-        mocked_query_find_node_partial,
-    )
-    .await?;
-    // 43 will be found!
-    assert_eq!(target, res.expect("should be there").id);
+    {
+        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let res = find_closest_node(
+            Arc::clone(&ctx),
+            Peer {
+                id: starting_from,
+                addr: "127.0.0.1:4000".parse()?,
+            },
+            sender,
+            target,
+            None,
+            mocked_query_find_node_partial,
+        )
+        .await?;
+        // 43 will not be found, because the graph is too much partial.
+        assert!(res.is_none());
 
-    let mut guard = ctx.lock().await;
-    let ctx = guard.deref_mut();
-    // Node 1 (starting point) and its next 3 nodes (34, 43, 60) should be added
-    // in the dht.
-    assert_eq!(vec![1, 34, 43, 60], ctx.dht.peer_ids().await);
+        let mut guard = ctx.lock().await;
+        let ctx = guard.deref_mut();
+        // Node 1 (starting point) and its next 3 nodes (34, 43, 60) should be added
+        // in the dht.
+        assert_eq!(vec![1, 4, 5, 6, 12, 13, 15], ctx.dht.peer_ids().await);
+    }
+
+    {
+        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let res = find_closest_node(
+            Arc::clone(&ctx),
+            Peer {
+                id: starting_from,
+                addr: "127.0.0.1:4000".parse()?,
+            },
+            sender,
+            target,
+            Some(u32::MAX),
+            mocked_query_find_node_partial,
+        )
+        .await?;
+        // 43 will be found!
+        assert_eq!(target, res.expect("should be there").id);
+
+        let mut guard = ctx.lock().await;
+        let ctx = guard.deref_mut();
+        assert_eq!(vec![1, 4, 5, 6, 12, 13, 15, 18, 19, 43], ctx.dht.peer_ids().await);
+    }
 
     Ok(())
 }
