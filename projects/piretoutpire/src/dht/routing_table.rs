@@ -12,6 +12,7 @@ use std::collections::VecDeque;
 pub struct RoutingTable {
     id: u32,
     bucket_tree: BucketTree,
+    recent_peers_cache_enabled: bool,
     latest_too_far_nodes: VecDeque<PeerNode>,
 }
 
@@ -22,8 +23,17 @@ impl RoutingTable {
         Self {
             id,
             bucket_tree: BucketTree::new(),
+            recent_peers_cache_enabled: true,
             latest_too_far_nodes: VecDeque::new(),
         }
+    }
+
+    // Enable the recent peer cache. On small network, with non uniform id
+    /// distribution, caching peers could be hard. The "recent" peers cache is
+    /// used on top of the routing table, to help finding peers. On big network,
+    /// it's usually not needed and could be disactivated.
+    pub fn set_recent_peers_cache_enable(&mut self, value: bool) {
+        self.recent_peers_cache_enabled = value;
     }
 
     // Clean the routing table.

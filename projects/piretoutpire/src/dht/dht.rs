@@ -35,6 +35,14 @@ impl DistributedHashTable {
         self.id
     }
 
+    // Enable the recent peer cache. On small network, with non uniform id
+    /// distribution, caching peers could be hard. The "recent" peers cache is
+    /// used on top of the routing table, to help finding peers. On big network,
+    /// it's usually not needed and could be disactivated.
+    pub fn set_recent_peers_cache_enable(&mut self, value: bool) {
+        self.routing_table.set_recent_peers_cache_enable(value);
+    }
+
     // Try to find a given node. Either return it, or return the closest known
     // node. When trying to find a node, also add the sender inside the routing
     // table.

@@ -125,7 +125,7 @@ pub async fn serve_ping(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, crc: 
     let header = "[PING]".to_owned().blue().on_truecolor(35, 38, 39).bold();
     log!(
         header,
-        " received from {}({}), sending {}",
+        " received from {}({}), sending this server peer id {}",
         crc,
         sender_addr,
         own_id

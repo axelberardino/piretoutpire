@@ -116,7 +116,7 @@ async fn test_find_node_itself() -> AnyResult<()> {
     let target = 0;
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
         let res = find_closest_node(
             ctx,
             Peer {
@@ -133,7 +133,7 @@ async fn test_find_node_itself() -> AnyResult<()> {
     }
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
         let res = find_closest_node(
             ctx,
             Peer {
@@ -159,7 +159,7 @@ async fn test_find_node_1_roundtrip() -> AnyResult<()> {
     let target = 2;
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
@@ -180,7 +180,7 @@ async fn test_find_node_1_roundtrip() -> AnyResult<()> {
     }
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
@@ -210,7 +210,7 @@ async fn test_find_node_max_roundtrip() -> AnyResult<()> {
     let target = 1;
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
@@ -227,7 +227,7 @@ async fn test_find_node_max_roundtrip() -> AnyResult<()> {
     }
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
@@ -253,7 +253,7 @@ async fn test_find_node_unbalanced_roundtrip() -> AnyResult<()> {
     let target = 8;
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
@@ -281,7 +281,7 @@ async fn test_find_node_unbalanced_roundtrip() -> AnyResult<()> {
     }
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
@@ -310,7 +310,7 @@ async fn test_find_node_max_roundtrip_in_a_big_mock_not_found() -> AnyResult<()>
     let target = 47;
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
@@ -334,7 +334,7 @@ async fn test_find_node_max_roundtrip_in_a_big_mock_not_found() -> AnyResult<()>
     }
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
@@ -367,7 +367,7 @@ async fn test_find_node_max_roundtrip_in_a_big_mock_found() -> AnyResult<()> {
     let target = 43;
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
@@ -391,7 +391,7 @@ async fn test_find_node_max_roundtrip_in_a_big_mock_found() -> AnyResult<()> {
     }
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
@@ -423,7 +423,7 @@ async fn test_find_node_max_roundtrip_in_a_partial_mock_found() -> AnyResult<()>
     let target = 43;
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
@@ -447,7 +447,7 @@ async fn test_find_node_max_roundtrip_in_a_partial_mock_found() -> AnyResult<()>
     }
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new("".to_owned(), sender)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {

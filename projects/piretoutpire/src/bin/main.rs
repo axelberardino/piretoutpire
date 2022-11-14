@@ -27,6 +27,13 @@ struct Cli {
     #[clap(long, value_name = "ms")]
     slowness: Option<u32>,
 
+    /// Disable the recent peers cache. On small network, with non uniform id
+    /// distribution, caching peers could be hard. The "recent" peers cache is
+    /// used on top of the routing table, to help finding peers. On big network,
+    /// it's usually not needed and could be disactivated.
+    #[clap(long, value_name = "disable-recent-peers-cache", action)]
+    disable_recent_peers_cache: bool,
+
     #[clap(subcommand)]
     command: Command,
 }
@@ -149,6 +156,9 @@ async fn main() -> AnyResult<()> {
 
     let mut manager = Manager::new(peer_id, own_addr, "/tmp/leecher".to_owned());
     manager.set_max_hop(args.max_hop);
+    manager
+        .set_recent_peers_cache_enable(!args.disable_recent_peers_cache)
+        .await;
     if manager.load_dht(Path::new("/tmp/dht")).await.is_err() {
         println!("can't find dht file");
     }
@@ -181,14 +191,13 @@ async fn main() -> AnyResult<()> {
             println!("File info: {:?}", file_info);
         }
         Command::Store { key, value } => {
-            // let nodes = manager.find_node(target).await?;
-            // println!("Node found are: {:?}", nodes);
+            manager.store_value(key, value).await?;
+            println!("Value has been stored");
         }
         Command::FindValue { key } => {
-            // let nodes = manager.find_node(target).await?;
-            // println!("Node found are: {:?}", nodes);
+            let value = manager.find_value(key).await?;
+            println!("Value found is: {:?}", value);
         }
-
         Command::Message { target, message } => {
             let succeed = manager.send_message(target, message).await?;
             println!("Message send and acknowledge: {}", succeed);
@@ -196,10 +205,10 @@ async fn main() -> AnyResult<()> {
         Command::Leech => {
             manager.bootstrap("127.0.0.1:4000".parse()?).await?;
             manager.dump_dht(Path::new("/tmp/dht")).await?;
-            manager.download_file(3613099103).await?;
-
             let succeed = manager.send_message(0, "hello dear server".to_owned()).await?;
             println!("Message sent: {}", succeed);
+
+            manager.download_file(3613099103).await?;
         }
     }
 

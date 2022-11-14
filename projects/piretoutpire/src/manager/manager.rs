@@ -51,6 +51,16 @@ impl Manager {
         self.max_hop = max_hop;
     }
 
+    // Enable the recent peer cache. On small network, with non uniform id
+    /// distribution, caching peers could be hard. The "recent" peers cache is
+    /// used on top of the routing table, to help finding peers. On big network,
+    /// it's usually not needed and could be disactivated.
+    pub async fn set_recent_peers_cache_enable(&mut self, value: bool) {
+        let mut guard = self.ctx.lock().await;
+        let ctx = guard.deref_mut();
+        ctx.dht.set_recent_peers_cache_enable(value);
+    }
+
     // Dump the dht into a file.
     pub async fn dump_dht(&self, path: &Path) -> AnyResult<()> {
         let guard = self.ctx.lock().await;
