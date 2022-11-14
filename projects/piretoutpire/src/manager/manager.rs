@@ -1,12 +1,13 @@
 use super::{
-    client::{handle_file_chunk, handle_file_info, handle_message, handle_ping},
+    client::{handle_file_chunk, handle_find_value, handle_message, handle_ping, handle_store},
     command_handler::listen_to_command,
     context::Context,
     find_node::{find_closest_node, query_find_node},
 };
 use crate::{
+    dht::peer_node::PeerNode,
     file::{file_chunk::FileChunk, torrent_file::TorrentFile},
-    network::protocol::Peer,
+    network::protocol::{FileInfo, Peer},
 };
 use errors::{reexports::eyre::ContextCompat, AnyResult};
 use std::{
@@ -232,18 +233,21 @@ impl Manager {
         Ok(true)
     }
 
+    // Return a file description from its crc
+    pub async fn file_info(&mut self, crc: u32) -> AnyResult<FileInfo> {
+        //     let nodes = self.find_node(crc).await?;
+
+        //     let local_ctx = Arc::clone(&ctx);
+        //     let stream = Arc::new(Mutex::new(TcpStream::connect(client_addr).await?));
+        //     let file_info = handle_file_info(local_ctx, stream, crc).await?;
+        //     Ok(file_info)
+        todo!()
+    }
+
     // Start downloading a file, or resume downloading
     pub async fn download_file(&mut self, crc: u32) -> AnyResult<()> {
         let ctx = Arc::clone(&self.ctx);
         // TODO ask for peers.
-
-        // Get file info
-        {
-            let client_addr: SocketAddr = "127.0.0.1:4000".parse()?;
-            let local_ctx = Arc::clone(&ctx);
-            let stream = Arc::new(Mutex::new(TcpStream::connect(client_addr).await?));
-            handle_file_info(local_ctx, stream, crc).await?;
-        }
 
         // Get some info about what to download
         let nb_chunks = {
@@ -275,7 +279,89 @@ impl Manager {
             }
         }
 
-        // self.start_stream().await?;
+        Ok(())
+    }
+
+    // Find the given value by its key. Search locally, then if not found, ask
+    // peers for the value.
+    pub async fn find_value(&mut self, target: u32) -> AnyResult<Option<String>> {
+        let (value, closest_peers) = {
+            let guard = self.ctx.lock().await;
+            let ctx = guard.deref();
+            (
+                ctx.dht.get_value(target).map(Clone::clone),
+                ctx.dht.find_closest_peers(target, 4).await,
+            )
+        };
+        // We already have this value locally
+        if value.is_some() {
+            return Ok(value);
+        }
+
+        // Starting for the 4 closest peers, search for this value
+        for peer in closest_peers {
+            find_closest_node(
+                Arc::clone(&self.ctx),
+                peer.into(),
+                self.id,
+                target,
+                self.max_hop,
+                query_find_node,
+            )
+            .await?;
+
+            let closest_peers = {
+                let guard = self.ctx.lock().await;
+                let ctx = guard.deref();
+                ctx.dht.find_closest_peers(target, 4).await
+            };
+            for close_peer in closest_peers {
+                let stream = Arc::new(Mutex::new(TcpStream::connect(close_peer.addr()).await?));
+                let message = handle_find_value(stream, target).await?;
+                if message.is_some() {
+                    return Ok(message);
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    // Find the given value by its key. Search locally, then if not found, ask
+    // peers for the value.
+    pub async fn store_value(&mut self, target: u32, message: String) -> AnyResult<()> {
+        // Store the value for us
+        let closest_peer = {
+            let mut guard = self.ctx.lock().await;
+            let ctx = guard.deref_mut();
+            ctx.dht.store_value(target, message.clone());
+            ctx.dht.find_closest_peers(target, 1).await
+        };
+
+        if let Some(peer) = closest_peer.take(1).collect::<Vec<PeerNode>>().pop() {
+            // Let's find the 4 closest nodes to us, and then ask them to store our
+            // value.
+            find_closest_node(
+                Arc::clone(&self.ctx),
+                peer.into(),
+                self.id,
+                target,
+                self.max_hop,
+                query_find_node,
+            )
+            .await?;
+
+            let closest_peers = {
+                let guard = self.ctx.lock().await;
+                let ctx = guard.deref();
+                ctx.dht.find_closest_peers(target, 4).await
+            };
+            for close_peer in closest_peers {
+                let stream = Arc::new(Mutex::new(TcpStream::connect(close_peer.addr()).await?));
+                handle_store(stream, target, message.clone()).await?;
+            }
+        }
+
         Ok(())
     }
 }

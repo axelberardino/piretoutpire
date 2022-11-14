@@ -115,7 +115,7 @@ impl DistributedHashTable {
     }
 
     // Get a stored value from its key.
-    pub fn get_value(&mut self, key: u32) -> Option<&String> {
+    pub fn get_value(&self, key: u32) -> Option<&String> {
         self.kv_store.get(&key)
     }
 }

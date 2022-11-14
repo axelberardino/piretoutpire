@@ -3,7 +3,7 @@ use crate::{
     file::{file_chunk::FileChunk, torrent_file::TorrentFile},
     network::{
         api::{file_chunk, file_info, find_node, find_value, ping, send_message, store},
-        protocol::{Command, Peer},
+        protocol::{Command, ErrorCode, FileInfo, Peer},
     },
 };
 use errors::{bail, AnyResult};
@@ -19,12 +19,11 @@ pub async fn handle_file_info(
     ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
     crc: u32,
-) -> AnyResult<()> {
+) -> AnyResult<FileInfo> {
     let command = file_info(Arc::clone(&stream), crc).await?;
 
     match command {
         Command::FileInfoResponse(file_info) => {
-            eprintln!("received file_info {:?}", &file_info);
             let mut guard = ctx.lock().await;
             let ctx = guard.deref_mut();
 
@@ -52,11 +51,11 @@ pub async fn handle_file_info(
                     entry.insert((torrent, chunks));
                 }
             }
+            Ok(file_info)
         }
-        Command::ErrorOccured(error) => eprintln!("peer return error: {}", error),
+        Command::ErrorOccured(error) => bail!("peer return error: {}", error),
         _ => bail!("Wrong command received: {:?}", command),
     }
-    Ok(())
 }
 
 // Ask for a given file chunk.
@@ -139,14 +138,15 @@ pub async fn handle_store(stream: Arc<Mutex<TcpStream>>, key: u32, value: String
 }
 
 // Ask a peer for a store value in its kv_store, for a given key.
-pub async fn handle_find_value(stream: Arc<Mutex<TcpStream>>, key: u32) -> AnyResult<String> {
+pub async fn handle_find_value(stream: Arc<Mutex<TcpStream>>, key: u32) -> AnyResult<Option<String>> {
     let command = find_value(Arc::clone(&stream), key).await?;
 
     match command {
         Command::FindValueResponse(message) => {
             eprintln!("got value {:?}", message);
-            Ok(message)
+            Ok(Some(message))
         }
+        Command::ErrorOccured(ErrorCode::KeyNotFound) => Ok(None),
         Command::ErrorOccured(error) => bail!("peer return error: {}", error),
         _ => bail!("Wrong command received: {:?}", command),
     }

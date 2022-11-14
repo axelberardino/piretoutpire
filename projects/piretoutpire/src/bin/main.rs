@@ -1,4 +1,4 @@
-use clap::{ArgGroup, Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use colored::Colorize;
 use errors::AnyResult;
 use piretoutpire::manager::manager::Manager;
@@ -15,13 +15,17 @@ struct Cli {
     #[clap(long, value_name = "host:port")]
     server_addr: String,
 
-    /// Node id (empty = random)
-    #[clap(long, value_name = "node_id")]
-    node_id: Option<u32>,
+    /// Peer id (empty = random)
+    #[clap(long, value_name = "id")]
+    peer_id: Option<u32>,
 
     /// Max hop (empty = default behavior, search until not closer)
-    #[clap(long, value_name = "max_hop")]
+    #[clap(long, value_name = "nb")]
     max_hop: Option<u32>,
+
+    /// Force this peer to wait X ms before answering each rpc (for debug purpose)
+    #[clap(long, value_name = "ms")]
+    slowness: Option<u32>,
 
     #[clap(subcommand)]
     command: Command,
@@ -29,13 +33,14 @@ struct Cli {
 
 #[derive(Debug, Subcommand, Eq, PartialEq)]
 pub enum Command {
-    /// Passively seed files and dht.
-    #[clap(name = "seed")]
-    Seed,
-
+    // HACK
     /// Test leech
     #[clap(name = "leech")]
     Leech,
+
+    /// Passively seed files and dht
+    #[clap(name = "seed")]
+    Seed,
 
     /// Ping a user from its peer id
     #[clap(arg_required_else_help = true)]
@@ -46,7 +51,8 @@ pub enum Command {
         target: u32,
     },
 
-    /// Bootstrap this node by giving a known peer address
+    /// Bootstrap this peer by giving a known peer address. Use it with a big
+    /// max-hop to discover peers on a small network
     #[clap(arg_required_else_help = true)]
     #[clap(name = "bootstrap")]
     Bootstrap {
@@ -55,7 +61,7 @@ pub enum Command {
         peer_addr: String,
     },
 
-    /// Clones repos
+    /// Download a file, given its crc
     #[clap(arg_required_else_help = true)]
     #[clap(name = "download")]
     DownloadFile {
@@ -64,7 +70,16 @@ pub enum Command {
         file_crc: u32,
     },
 
-    /// Find the given nodes by its id, or return the 4 closest
+    /// Ask a peer for file description, given its crc
+    #[clap(arg_required_else_help = true)]
+    #[clap(name = "file-info")]
+    FileInfo {
+        /// Peer id
+        #[clap(value_parser)]
+        file_crc: u32,
+    },
+
+    /// Find the given peer by its id, or return the 4 closest
     #[clap(arg_required_else_help = true)]
     #[clap(name = "find-node")]
     FindNode {
@@ -73,7 +88,28 @@ pub enum Command {
         target: u32,
     },
 
-    /// Download a file by its crc
+    /// Store a value on the dht.
+    #[clap(arg_required_else_help = true)]
+    #[clap(name = "store")]
+    Store {
+        /// Key
+        #[clap(value_parser)]
+        key: u32,
+        /// value
+        #[clap(value_parser)]
+        value: String,
+    },
+
+    /// Store a value on the dht.
+    #[clap(arg_required_else_help = true)]
+    #[clap(name = "find-value")]
+    FindValue {
+        /// Key
+        #[clap(value_parser)]
+        key: u32,
+    },
+
+    /// Send a message to a given peer
     #[clap(arg_required_else_help = true)]
     #[clap(name = "message")]
     Message {
@@ -84,37 +120,11 @@ pub enum Command {
         #[clap(value_parser)]
         message: String,
     },
-    // /// Download a file by its crc
-    // #[clap(name = "message")]
-    // Message(MessageTarget),
-}
-
-#[derive(Debug, Args)]
-#[clap(group(
-    ArgGroup::new("target")
-        .required(true)
-        .args(&["id"]),
-))]
-pub struct Target {
-    /// Target every data source.
-    #[clap(short, long)]
-    pub id: u32,
-}
-
-#[derive(Debug, Args)]
-pub struct MessageTarget {
-    /// Peer id
-    #[clap(short, long)]
-    pub id: u32,
-
-    /// Message to send
-    #[clap(short, long)]
-    pub msg: String,
 }
 
 // Mode ------------------------------------------------------------------------
 
-// Generate a random node id.
+// Generate a random peer id.
 fn get_random_id() -> u32 {
     let mut rng = rand::thread_rng();
     rng.gen::<u32>()
@@ -123,21 +133,21 @@ fn get_random_id() -> u32 {
 #[tokio::main]
 async fn main() -> AnyResult<()> {
     let args = Cli::parse();
-    let node_id = args.node_id.unwrap_or_else(|| get_random_id());
+    let peer_id = args.peer_id.unwrap_or_else(|| get_random_id());
     let own_addr: SocketAddr = args.server_addr.parse()?;
 
     // HACK
-    let (own_addr, node_id) = if args.command == Command::Seed {
+    let (own_addr, peer_id) = if args.command == Command::Seed {
         ("127.0.0.1:4000".parse()?, 0)
     } else {
         ("127.0.0.1:4001".parse()?, 1)
     };
     // !HACK
 
-    let info = format!("Node ID is: {}, and own server address is {}", node_id, own_addr);
+    let info = format!("Peer ID is: {}, and own server address is {}", peer_id, own_addr);
     println!("{}", info.truecolor(135, 138, 139).italic());
 
-    let mut manager = Manager::new(node_id, own_addr, "/tmp/leecher".to_owned());
+    let mut manager = Manager::new(peer_id, own_addr, "/tmp/leecher".to_owned());
     manager.set_max_hop(args.max_hop);
     if manager.load_dht(Path::new("/tmp/dht")).await.is_err() {
         println!("can't find dht file");
@@ -157,14 +167,28 @@ async fn main() -> AnyResult<()> {
             println!("Node {} acknowledge: {}", target, succeed);
         }
         Command::FindNode { target } => {
-            let nodes = manager.find_node(target).await?;
-            println!("Node found are: {:?}", nodes);
+            let peers = manager.find_node(target).await?;
+            println!("Node found are: {:?}", peers);
         }
         Command::DownloadFile { mut file_crc } => {
             file_crc = 3613099103; // tmp hack
             manager.download_file(file_crc).await?;
             println!("File downloaded: {}", file_crc);
         }
+        Command::FileInfo { mut file_crc } => {
+            file_crc = 3613099103; // tmp hack
+            let file_info = manager.file_info(file_crc).await?;
+            println!("File info: {:?}", file_info);
+        }
+        Command::Store { key, value } => {
+            // let nodes = manager.find_node(target).await?;
+            // println!("Node found are: {:?}", nodes);
+        }
+        Command::FindValue { key } => {
+            // let nodes = manager.find_node(target).await?;
+            // println!("Node found are: {:?}", nodes);
+        }
+
         Command::Message { target, message } => {
             let succeed = manager.send_message(target, message).await?;
             println!("Message send and acknowledge: {}", succeed);
