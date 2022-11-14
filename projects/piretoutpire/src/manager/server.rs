@@ -3,6 +3,7 @@ use crate::{
     dht::peer_node::PeerNode,
     network::protocol::{Command, ErrorCode, FileInfo, Peer},
 };
+use colored::Colorize;
 use std::{net::SocketAddr, ops::DerefMut, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -10,7 +11,13 @@ use tokio::sync::Mutex;
 
 // FIXME: rename? Handle handshake.
 pub async fn serve_file_info(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, crc: u32) -> Command {
-    eprintln!("file_info received from {}({})", crc, sender_addr);
+    let prefix = format!(
+        "{} received crc {} from {}",
+        "[FILE_INFO]".to_owned().blue().on_truecolor(35, 38, 39).bold(),
+        crc,
+        sender_addr,
+    );
+
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();
 
@@ -22,9 +29,13 @@ pub async fn serve_file_info(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, 
                 file_crc: torrent.metadata.file_crc,
                 original_filename: torrent.metadata.original_filename.clone(),
             };
+            println!("{}, and send back {:?}", prefix, file_info);
             Command::FileInfoResponse(file_info)
         }
-        None => Command::ErrorOccured(ErrorCode::FileNotFound),
+        None => {
+            println!("{}, but can't found the resource", prefix);
+            Command::ErrorOccured(ErrorCode::FileNotFound)
+        }
     }
 }
 
@@ -35,9 +46,12 @@ pub async fn serve_file_chunk(
     crc: u32,
     chunk_id: u32,
 ) -> Command {
-    eprintln!(
-        "file_chunk received from {} asking for {}/{}",
-        sender_addr, crc, chunk_id
+    let prefix = format!(
+        "{} received from {} asking for {}/{}",
+        "[CHUNK]".to_owned().blue().on_truecolor(35, 38, 39).bold(),
+        sender_addr,
+        crc,
+        chunk_id,
     );
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();
@@ -45,15 +59,25 @@ pub async fn serve_file_chunk(
     match ctx.available_torrents.get_mut(&crc) {
         Some((torrent, chunks)) => {
             if chunk_id as usize >= torrent.metadata.completed_chunks.len() {
+                println!("{}, but chunk was invalid", prefix);
                 Command::ErrorOccured(ErrorCode::InvalidChunk)
             } else {
                 match chunks.read_chunk(chunk_id) {
-                    Ok(chunk) => Command::ChunkResponse(crc, chunk_id, chunk),
-                    Err(_) => Command::ErrorOccured(ErrorCode::ChunkNotFound),
+                    Ok(chunk) => {
+                        println!("{}, and send back {:?}", prefix, chunk);
+                        Command::ChunkResponse(crc, chunk_id, chunk)
+                    }
+                    Err(_) => {
+                        println!("{}, but chunk was not found", prefix);
+                        Command::ErrorOccured(ErrorCode::ChunkNotFound)
+                    }
                 }
             }
         }
-        None => Command::ErrorOccured(ErrorCode::FileNotFound),
+        None => {
+            println!("{}, but file was not found", prefix);
+            Command::ErrorOccured(ErrorCode::FileNotFound)
+        }
     }
 }
 
@@ -76,9 +100,13 @@ pub async fn serve_find_node(
         })
         .collect::<Vec<_>>();
 
-    eprintln!(
-        "received find_node from {}({}) for {} and send back {:?}",
-        sender, sender_addr, target, peers
+    println!(
+        "{} received from {}({}) for {} and send back {:?}",
+        "[FIND_NODE]".to_owned().blue().on_truecolor(35, 38, 39).bold(),
+        sender,
+        sender_addr,
+        target,
+        peers
     );
     Command::FindNodeResponse(peers)
 }
@@ -89,7 +117,13 @@ pub async fn serve_ping(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, crc: 
     let ctx = guard.deref_mut();
 
     let own_id = ctx.dht.id();
-    eprintln!("received ping from {}({}), sending {}", crc, sender_addr, own_id);
+    println!(
+        "{} received from {}({}), sending {}",
+        "[PING]".to_owned().blue().on_truecolor(35, 38, 39).bold(),
+        crc,
+        sender_addr,
+        own_id
+    );
     Command::PingResponse(own_id)
 }
 

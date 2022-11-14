@@ -63,6 +63,7 @@ impl Manager {
     }
 
     // Start to bootstrap the DHT from an entry point (any available peer).
+    // Start by pinging it, then send a find_node on ourself.
     pub async fn bootstrap(&mut self, peer_addr: SocketAddr) -> AnyResult<()> {
         let peer = Peer {
             id: u32::MAX,
@@ -90,6 +91,33 @@ impl Manager {
         )
         .await?;
         Ok(())
+    }
+
+    // Ping a peer by its id. Return if we know the peer.
+    pub async fn ping(&self, target: u32) -> AnyResult<bool> {
+        let peer = {
+            let mut guard = self.ctx.lock().await;
+            let ctx = guard.deref_mut();
+            ctx.dht
+                .find_closest_peer(target)
+                .await
+                .filter(|peer| peer.id() == target)
+        };
+
+        if let Some(peer) = peer {
+            ping(
+                Arc::clone(&self.ctx),
+                Peer {
+                    id: peer.id(),
+                    addr: peer.addr(),
+                },
+                self.id,
+            )
+            .await?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     // Send a message to a peer. Return if the peer acknowledge it.

@@ -121,10 +121,7 @@ pub async fn handle_ping(stream: Arc<Mutex<TcpStream>>, sender: u32) -> AnyResul
     let command = ping(Arc::clone(&stream), sender).await?;
 
     match command {
-        Command::PingResponse(target) => {
-            eprintln!("received ping node {:?}", target);
-            Ok(target)
-        }
+        Command::PingResponse(target) => Ok(target),
         Command::ErrorOccured(error) => bail!("peer return error: {}", error),
         _ => bail!("Wrong command received: {:?}", command),
     }
