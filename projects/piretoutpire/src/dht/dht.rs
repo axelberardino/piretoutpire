@@ -14,7 +14,8 @@ pub struct DistributedHashTable {
 
 // Intermediary structure to serialize and deserialize dht peers.
 #[derive(Debug, Serialize, Deserialize)]
-struct FilePeers {
+struct Config {
+    id: u32,
     peers: Vec<PeerNode>,
     kv_store: HashMap<u32, String>,
 }
@@ -69,7 +70,8 @@ impl DistributedHashTable {
 
     // Dump this dht into a file.
     pub async fn dump_to_file(&self, path: &Path) -> AnyResult<()> {
-        let peers = FilePeers {
+        let config = Config {
+            id: self.id,
             peers: self.routing_table.get_all_peers().await.collect(),
             kv_store: self.kv_store.clone(),
         };
@@ -79,7 +81,7 @@ impl DistributedHashTable {
             .create(true)
             .write(true)
             .open(&path)?;
-        serde_json::to_writer(file, &peers)?;
+        serde_json::to_writer(file, &config)?;
 
         Ok(())
     }
@@ -88,17 +90,32 @@ impl DistributedHashTable {
     pub async fn load_from_file(&mut self, path: &Path) -> AnyResult<()> {
         let file = OpenOptions::new().read(true).open(&path)?;
         let reader = BufReader::new(file);
-        let peers: FilePeers = serde_json::from_reader(reader)?;
+        let config: Config = serde_json::from_reader(reader)?;
 
         self.clean().await;
-        for peer in peers.peers {
+        self.id = config.id;
+        for peer in config.peers {
             self.add_peer_node(peer).await;
         }
-        self.kv_store = peers.kv_store;
+        self.kv_store = config.kv_store;
 
         Ok(())
     }
 
+    // Store a given value for a given key.
+    // Value will be overwritten.
+    pub fn store_value(&mut self, key: u32, message: String) {
+        self.kv_store.insert(key, message);
+    }
+
+    // Get a stored value from its key.
+    pub fn get_value(&mut self, key: u32) -> Option<&String> {
+        self.kv_store.get(&key)
+    }
+}
+
+// Private method.
+impl DistributedHashTable {
     // Add a new node for ease of purpose in test files.
     async fn add_peer_node(&mut self, peer: PeerNode) {
         self.routing_table.add_node(peer).await;

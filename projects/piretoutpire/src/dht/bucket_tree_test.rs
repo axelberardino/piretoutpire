@@ -8,26 +8,37 @@ async fn test_construct_table() -> AnyResult<()> {
 
     let mut tree = BucketTree::new();
     // Insert any value
-    assert!(tree.add_peer_node(PeerNode::new(middle, dummy_addr)).await);
+    assert_eq!(
+        InsertResult::Succeed,
+        tree.add_peer_node(PeerNode::new(middle, dummy_addr)).await
+    );
 
     // Ensure it can't be inserted twice
-    assert!(!tree.add_peer_node(PeerNode::new(middle, dummy_addr)).await);
+    assert_eq!(
+        InsertResult::AlreadyExists,
+        tree.add_peer_node(PeerNode::new(middle, dummy_addr)).await
+    );
 
     // Insert as many values as to fill the bucket
     for idx in 1..BUCKET_SIZE {
-        assert!(
+        assert_eq!(
+            InsertResult::Succeed,
             tree.add_peer_node(PeerNode::new(middle + idx as u32, dummy_addr))
                 .await
         );
     }
 
-    assert!(
+    assert_eq!(
+        InsertResult::Succeed,
         tree.add_peer_node(PeerNode::new(middle + BUCKET_SIZE as u32, dummy_addr))
             .await
     );
 
     for idx in 0..BUCKET_SIZE {
-        assert!(tree.add_peer_node(PeerNode::new(idx as u32, dummy_addr)).await);
+        assert_eq!(
+            InsertResult::Succeed,
+            tree.add_peer_node(PeerNode::new(idx as u32, dummy_addr)).await
+        );
     }
 
     Ok(())
@@ -40,10 +51,16 @@ async fn test_closest_peers() -> AnyResult<()> {
 
     // Insert as many values as to fill the bucket
     for idx in 0..=10 {
-        assert!(tree.add_peer_node(PeerNode::new(idx as u32, dummy_addr)).await);
+        assert_eq!(
+            InsertResult::Succeed,
+            tree.add_peer_node(PeerNode::new(idx as u32, dummy_addr)).await
+        );
     }
     for idx in 15..=18 {
-        assert!(tree.add_peer_node(PeerNode::new(idx as u32, dummy_addr)).await);
+        assert_eq!(
+            InsertResult::Succeed,
+            tree.add_peer_node(PeerNode::new(idx as u32, dummy_addr)).await
+        );
     }
 
     let peers = tree.search_closest_peers(100).await;

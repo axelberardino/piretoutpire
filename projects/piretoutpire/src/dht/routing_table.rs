@@ -1,5 +1,9 @@
-use super::{bucket_tree::BucketTree, peer_node::PeerNode};
+use super::{
+    bucket_tree::{BucketTree, InsertResult},
+    peer_node::PeerNode,
+};
 use crate::utils::distance;
+use std::collections::VecDeque;
 
 // Holds information about other nodes.
 // This routing table represents part of the global distributed nodes. Only the
@@ -8,6 +12,7 @@ use crate::utils::distance;
 pub struct RoutingTable {
     id: u32,
     bucket_tree: BucketTree,
+    latest_too_far_nodes: VecDeque<PeerNode>,
 }
 
 impl RoutingTable {
@@ -17,6 +22,7 @@ impl RoutingTable {
         Self {
             id,
             bucket_tree: BucketTree::new(),
+            latest_too_far_nodes: VecDeque::new(),
         }
     }
 
@@ -28,7 +34,12 @@ impl RoutingTable {
     // Add a new node inside the routing table, store as a distance.
     pub async fn add_node(&mut self, mut peer: PeerNode) {
         peer.set_id(distance(peer.id(), self.id));
-        self.bucket_tree.add_peer_node(peer).await;
+        if let InsertResult::NoRoom = self.bucket_tree.add_peer_node(peer.clone()).await {
+            self.latest_too_far_nodes.push_front(peer);
+            if self.latest_too_far_nodes.len() > 100 {
+                self.latest_too_far_nodes.pop_back();
+            }
+        }
     }
 
     // Get all peers in this routing table.

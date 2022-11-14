@@ -21,6 +21,8 @@ use tokio::{
     sync::Mutex,
 };
 
+// Handle everything about peer. RPC calls, connection handling, and
+// configuration load and write.
 pub struct Manager {
     id: u32,
     addr: SocketAddr,
@@ -29,6 +31,8 @@ pub struct Manager {
 }
 
 impl Manager {
+    // BASICS ------------------------------------------------------------------
+
     // Expect an address like: "127.0.0.1:8080".parse()
     pub fn new(id: u32, addr: SocketAddr, working_directory: String) -> Self {
         Self {
@@ -61,6 +65,38 @@ impl Manager {
         ctx.dht.load_from_file(path).await?;
         Ok(())
     }
+
+    // FIXME
+    // Load all files in a given directory to be shared on the peer network.
+    // pub async fn load_directory<P: AsRef<Path>>(&mut self, dir: P) -> AnyResult<()> {}
+
+    // Load a file to be shared on the peer network.
+    pub async fn load_file<P: AsRef<Path>>(&mut self, file: P) -> AnyResult<()> {
+        let torrent = TorrentFile::new(
+            file.as_ref().display().to_string() + ".metadata",
+            file.as_ref().display().to_string(),
+        )?;
+        let chunks = FileChunk::open_existing(&torrent.metadata.original_file)?;
+
+        let mut ctx = self.ctx.lock().await;
+        ctx.available_torrents
+            .insert(torrent.metadata.file_crc, (torrent, chunks));
+
+        Ok(())
+    }
+
+    // Start the backend server to listen to command and seed.
+    pub async fn start_server(&self) -> AnyResult<()> {
+        let listener = TcpListener::bind(self.addr).await?;
+
+        loop {
+            let (stream, _) = listener.accept().await?;
+            let ctx = Arc::clone(&self.ctx);
+            tokio::spawn(async move { listen_to_command(ctx, stream).await });
+        }
+    }
+
+    // RPC ---------------------------------------------------------------------
 
     // Start to bootstrap the DHT from an entry point (any available peer).
     // Start by pinging it, then send a find_node on ourself.
@@ -203,36 +239,9 @@ impl Manager {
         // self.start_stream().await?;
         Ok(())
     }
-
-    // Load a file to be shared on the peer network.
-    pub async fn load_file<P: AsRef<Path>>(&mut self, file: P) -> AnyResult<()> {
-        let torrent = TorrentFile::new(
-            file.as_ref().display().to_string() + ".metadata",
-            file.as_ref().display().to_string(),
-        )?;
-        let chunks = FileChunk::open_existing(&torrent.metadata.original_file)?;
-
-        let mut ctx = self.ctx.lock().await;
-        ctx.available_torrents
-            .insert(torrent.metadata.file_crc, (torrent, chunks));
-
-        Ok(())
-    }
-
-    // FIXME
-    // Load all files in a given directory to be shared on the peer network.
-    // pub async fn load_directory<P: AsRef<Path>>(&mut self, dir: P) -> AnyResult<()> {}
-
-    pub async fn start_server(&self) -> AnyResult<()> {
-        let listener = TcpListener::bind(self.addr).await?;
-
-        loop {
-            let (stream, _) = listener.accept().await?;
-            let ctx = Arc::clone(&self.ctx);
-            tokio::spawn(async move { listen_to_command(ctx, stream).await });
-        }
-    }
 }
+
+// Helpers ---------------------------------------------------------------------
 
 // Ping a peer, and put it's id into our dht.
 async fn ping(ctx: Arc<Mutex<Context>>, peer: Peer, sender: u32) -> AnyResult<u32> {

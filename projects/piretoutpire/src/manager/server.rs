@@ -64,7 +64,7 @@ pub async fn serve_file_chunk(
             } else {
                 match chunks.read_chunk(chunk_id) {
                     Ok(chunk) => {
-                        println!("{}, and send back {:?}", prefix, chunk);
+                        println!("{}, and send back {} bytes", prefix, chunk.len());
                         Command::ChunkResponse(crc, chunk_id, chunk)
                     }
                     Err(_) => {
@@ -134,29 +134,53 @@ pub async fn serve_store(
     key: u32,
     message: String,
 ) -> Command {
-    eprintln!("received store from ({}) for {}={}", sender_addr, key, message);
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();
-
-    //FIXME
+    println!(
+        "{} received from {}, store {}={}",
+        "[STORE_VALUE]".to_owned().blue().on_truecolor(35, 38, 39).bold(),
+        sender_addr,
+        key,
+        &message
+    );
+    ctx.dht.store_value(key, message);
 
     Command::StoreResponse()
 }
 
 // Allow a client to put a value inside this server.
 pub async fn serve_find_value(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, key: u32) -> Command {
+    let prefix = format!(
+        "{} {} ask for {}",
+        "[GET]".to_owned().blue().on_truecolor(35, 38, 39).bold(),
+        sender_addr,
+        key,
+    );
+
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();
+    let message = ctx.dht.get_value(key);
 
-    //FIXME + ErrorOccured(KeyNotFound)
-    let msg = "FIXME".to_owned();
-    eprintln!("received find_value from ({}) for {}={}", sender_addr, key, msg);
-
-    Command::FindValueResponse(msg)
+    match message {
+        Some(message) => {
+            println!("{}={}", prefix, message);
+            Command::FindValueResponse(message.clone())
+        }
+        None => {
+            println!("{}, but the key was not found", prefix);
+            Command::ErrorOccured(ErrorCode::KeyNotFound)
+        }
+    }
 }
 
 // Display the message the user send.
-pub async fn serve_message(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, message: String) -> Command {
-    eprintln!("{} send us this message {}", sender_addr, message);
+pub async fn serve_message(_: Arc<Mutex<Context>>, sender_addr: SocketAddr, message: String) -> Command {
+    println!(
+        "{} user {}, send: \"{}\"",
+        "[MESSAGE]".to_owned().yellow().on_truecolor(35, 38, 39).bold(),
+        sender_addr,
+        message
+    );
+
     Command::MessageResponse()
 }

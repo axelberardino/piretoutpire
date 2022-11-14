@@ -60,6 +60,14 @@ struct Bucket {
     // freshness: ?
 }
 
+// Use to know what went wrong during insertion.
+#[derive(Debug, Eq, PartialEq)]
+pub enum InsertResult {
+    Succeed,
+    AlreadyExists,
+    NoRoom,
+}
+
 // Public interface.
 impl BucketTree {
     // Initialize a new tree.
@@ -77,7 +85,7 @@ impl BucketTree {
 
     // Add a new peer info into the tree.
     // Returns if an insertion has been made.
-    pub async fn add_peer_node(&mut self, peer_node: PeerNode) -> bool {
+    pub async fn add_peer_node(&mut self, peer_node: PeerNode) -> InsertResult {
         let rc_tree_node = self.find_leaf(peer_node.id()).await;
         let mut tree_node = rc_tree_node.lock().await;
         debug_assert!(peer_node.id() >= tree_node.start);
@@ -89,14 +97,14 @@ impl BucketTree {
 
         // Already exists
         if bucket.peers.iter().any(|peer| peer.id() == peer_node.id()) {
-            return false;
+            return InsertResult::AlreadyExists;
         }
 
         // Enough room for a new peer
         if bucket.peers.len() < BUCKET_SIZE {
             bucket.peers.push(peer_node);
             bucket.peers.sort_by_key(|peer| peer.id());
-            return true;
+            return InsertResult::Succeed;
         }
 
         // Not enough room, try to replace a bad peer first
@@ -107,12 +115,12 @@ impl BucketTree {
         {
             *bad_node = peer_node;
             bucket.peers.sort_by_key(|peer| peer.id());
-            return true;
+            return InsertResult::Succeed;
         }
 
         // We're already on a right leaf, and there's no room, just give up.
         if right_leaf {
-            return false;
+            return InsertResult::NoRoom;
         }
 
         // Start by releasing all borrowed values.
@@ -134,32 +142,32 @@ impl BucketTree {
             let (split, new_left, new_right) = split_node(Arc::clone(&rc_tree_node), start, end).await;
             let new_node = if peer_id < split { new_left } else { new_right };
 
-            let succeed = match &mut new_node.lock().await.children {
+            let result = match &mut new_node.lock().await.children {
                 LeafOrChildren::Leaf(bucket) => {
                     if bucket.peers.len() < BUCKET_SIZE {
                         bucket.peers.push(peer_node.clone());
                         bucket.peers.sort_by_key(|peer| peer.id());
-                        true
+                        InsertResult::Succeed
                     } else {
-                        false
+                        InsertResult::NoRoom
                     }
                 }
                 LeafOrChildren::Children(_, bucket) => {
                     if bucket.peers.len() < BUCKET_SIZE {
                         bucket.peers.push(peer_node.clone());
                         bucket.peers.sort_by_key(|peer| peer.id());
-                        true
+                        InsertResult::Succeed
                     } else {
-                        return false;
+                        return InsertResult::NoRoom;
                     }
                 }
             };
 
-            if succeed {
-                return true;
+            if result == InsertResult::Succeed {
+                return InsertResult::Succeed;
             }
             if end - start <= BUCKET_SIZE as u32 {
-                return false;
+                return InsertResult::Succeed;
             }
 
             rc_tree_node = new_node;
