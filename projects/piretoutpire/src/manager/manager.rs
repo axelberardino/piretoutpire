@@ -1,7 +1,7 @@
 use super::{
     client::{
-        handle_announce, handle_file_chunk, handle_find_value, handle_get_peers, handle_message, handle_ping,
-        handle_store,
+        handle_announce, handle_file_chunk, handle_file_info, handle_find_value, handle_get_peers,
+        handle_message, handle_ping, handle_store,
     },
     command_handler::listen_to_command,
     context::Context,
@@ -268,20 +268,26 @@ impl Manager {
     }
 
     // Return a file description from its crc
-    pub async fn file_info(&mut self, crc: u32) -> AnyResult<FileInfo> {
-        //     let nodes = self.find_node(crc).await?;
-
-        //     let local_ctx = Arc::clone(&ctx);
-        //     let stream = Arc::new(Mutex::new(TcpStream::connect(client_addr).await?));
-        //     let file_info = handle_file_info(local_ctx, stream, crc).await?;
-        //     Ok(file_info)
-        todo!()
+    pub async fn file_info(&mut self, crc: u32) -> AnyResult<Option<FileInfo>> {
+        match self.get_peers(crc).await? {
+            Some(peers) => {
+                for peer in peers {
+                    let stream = Arc::new(Mutex::new(TcpStream::connect(peer.addr).await?));
+                    let res = handle_file_info(Arc::clone(&self.ctx), stream, crc).await?;
+                    if res.is_some() {
+                        return Ok(res);
+                    }
+                }
+                Ok(None)
+            }
+            None => Ok(None),
+        }
     }
 
     // Start downloading a file, or resume downloading
     pub async fn download_file(&mut self, crc: u32) -> AnyResult<()> {
         let ctx = Arc::clone(&self.ctx);
-        // TODO ask for peers.
+        // FIXME ask for peers.
 
         // Get some info about what to download
         let nb_chunks = {
@@ -296,6 +302,7 @@ impl Manager {
             chunks.nb_chunks()
         };
 
+        // FIXME chunk_download abort too soon, handle that better
         {
             let client_addr: SocketAddr = "127.0.0.1:4000".parse()?;
             let stream = Arc::new(Mutex::new(TcpStream::connect(client_addr).await?));

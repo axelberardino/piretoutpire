@@ -19,7 +19,7 @@ pub async fn handle_file_info(
     ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
     crc: u32,
-) -> AnyResult<FileInfo> {
+) -> AnyResult<Option<FileInfo>> {
     let command = file_info(Arc::clone(&stream), crc).await?;
 
     match command {
@@ -51,8 +51,9 @@ pub async fn handle_file_info(
                     entry.insert((torrent, chunks));
                 }
             }
-            Ok(file_info)
+            Ok(Some(file_info))
         }
+        Command::ErrorOccured(error) if error == ErrorCode::FileNotFound => Ok(None),
         Command::ErrorOccured(error) => bail!("peer return error: {}", error),
         _ => bail!("Wrong command received: {:?}", command),
     }

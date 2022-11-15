@@ -170,6 +170,7 @@ async fn main() -> AnyResult<()> {
     let own_addr: SocketAddr = args.server_addr.parse()?;
 
     // HACK
+    // file_crc = 3613099103
     let (own_addr, peer_id) = if args.command == Command::Seed {
         args.dht_filename = "/tmp/dht_server".to_owned();
         ("127.0.0.1:4000".parse()?, 0)
@@ -208,19 +209,17 @@ async fn main() -> AnyResult<()> {
             let peers = manager.find_node(target).await?;
             println!("Node found are: {:?}", peers);
         }
-        Command::DownloadFile { mut file_crc } => {
-            file_crc = 3613099103; // tmp hack
+        Command::DownloadFile { file_crc } => {
             manager.download_file(file_crc).await?;
             println!("File downloaded: {}", file_crc);
         }
-        Command::FileInfo { mut file_crc } => {
-            file_crc = 3613099103; // tmp hack
+        Command::FileInfo { file_crc } => {
             let file_info = manager.file_info(file_crc).await?;
             println!("File info: {:?}", file_info);
         }
         Command::Store { key, value } => {
-            manager.store_value(key, value).await?;
-            println!("Value has been stored");
+            let nb_ack = manager.store_value(key, value).await?;
+            println!("{} peers sotre this value", nb_ack);
         }
         Command::FindValue { key } => {
             let value = manager.find_value(key).await?;
@@ -231,8 +230,8 @@ async fn main() -> AnyResult<()> {
             println!("Message send and acknowledge: {}", succeed);
         }
         Command::Announce { crc } => {
-            let succeed = manager.announce(crc).await?;
-            println!("Announced we're sharing the file. Acknowledge: {}", succeed);
+            let nb_ack = manager.announce(crc).await?;
+            println!("{} peers acknowledged we're sharing this file", nb_ack);
         }
         Command::GetPeers { crc } => {
             let peers = manager.get_peers(crc).await?;
