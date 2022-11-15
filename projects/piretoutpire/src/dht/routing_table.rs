@@ -51,7 +51,17 @@ impl RoutingTable {
         peer.set_id(distance(peer.id(), self.id));
         if let InsertResult::NoRoom = self.bucket_tree.add_peer_node(peer.clone()).await {
             if self.recent_peers_cache_enabled {
+                // Push an existing node to the front, or add it.
+                if let Some(idx) = self
+                    .latest_too_far_peers
+                    .iter()
+                    .position(|lru| lru.id() == peer.id())
+                {
+                    self.latest_too_far_peers.remove(idx);
+                }
                 self.latest_too_far_peers.push_front(peer);
+
+                // Prevent lru to grow too much.
                 if self.latest_too_far_peers.len() > 100 {
                     self.latest_too_far_peers.pop_back();
                 }

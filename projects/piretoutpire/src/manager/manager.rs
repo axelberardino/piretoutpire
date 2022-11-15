@@ -516,7 +516,3 @@ async fn ping(ctx: Arc<Mutex<Context>>, peer: Peer, sender: u32) -> AnyResult<u3
 
     Ok(target)
 }
-
-#[cfg(test)]
-#[path = "manager_test.rs"]
-mod manager_test;
