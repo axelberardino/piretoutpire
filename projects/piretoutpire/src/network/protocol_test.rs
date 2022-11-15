@@ -416,3 +416,104 @@ fn test_message_response_protocol() -> AnyResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_announce_request_protocol() -> AnyResult<()> {
+    let cmd = Command::AnnounceRequest(1234, 4567);
+    let raw_buf: Vec<u8> = cmd.into();
+    let raw_buf = raw_buf.as_slice();
+
+    #[rustfmt::skip]
+    assert_eq!(&[
+            15,
+            0, 0, 4, 210,
+            0, 0, 17, 215
+        ],
+        raw_buf
+    );
+
+    match Command::try_from(raw_buf)? {
+        Command::AnnounceRequest(sender, crc) => {
+            assert_eq!(1234, sender);
+            assert_eq!(4567, crc);
+        }
+        _ => panic!(),
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_announce_response_protocol() -> AnyResult<()> {
+    let cmd = Command::AnnounceResponse();
+    let raw_buf: Vec<u8> = cmd.into();
+    let raw_buf = raw_buf.as_slice();
+
+    #[rustfmt::skip]
+    assert_eq!(&[
+            16,
+        ],
+        raw_buf
+    );
+
+    match Command::try_from(raw_buf)? {
+        Command::AnnounceResponse() => {}
+        _ => panic!(),
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_get_peers_request_protocol() -> AnyResult<()> {
+    let cmd = Command::GetPeersRequest(1234);
+    let raw_buf: Vec<u8> = cmd.into();
+    let raw_buf = raw_buf.as_slice();
+
+    #[rustfmt::skip]
+    assert_eq!(&[
+            17,
+            0, 0, 4, 210,
+        ],
+        raw_buf
+    );
+
+    match Command::try_from(raw_buf)? {
+        Command::GetPeersRequest(crc) => assert_eq!(1234, crc),
+        _ => panic!(),
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_get_peers_response_protocol() -> AnyResult<()> {
+    let cmd = Command::GetPeersResponse(vec![Peer {
+        id: 1234,
+        addr: "127.0.0.1:4000".parse()?,
+    }]);
+    let raw_buf: Vec<u8> = cmd.into();
+    let raw_buf = raw_buf.as_slice();
+
+    #[rustfmt::skip]
+    assert_eq!(&[
+            18,
+            0, 0, 0, 1,
+                0, 0, 4, 210,
+                0, 0, 0, 14, 49, 50, 55, 46, 48, 46, 48, 46, 49, 58, 52, 48, 48, 48
+        ],
+        raw_buf
+    );
+
+    match Command::try_from(raw_buf)? {
+        Command::GetPeersResponse(peers) => {
+            assert_eq!(1, peers.len());
+            let peer = &peers[0];
+            assert_eq!(1234, peer.id);
+            assert_eq!("127.0.0.1:4000".parse::<SocketAddr>()?, peer.addr);
+        }
+        _ => panic!(),
+    }
+
+    Ok(())
+}

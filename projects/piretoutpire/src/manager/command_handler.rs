@@ -36,6 +36,8 @@ async fn dispatch(
         Command::StoreRequest(key, message) => serve_store(ctx, sender_addr, key, message).await,
         Command::FindValueRequest(key) => serve_find_value(ctx, sender_addr, key).await,
         Command::MessageRequest(message) => serve_message(ctx, sender_addr, message).await,
+        Command::AnnounceRequest(_, _) => todo!(),
+        Command::GetPeersRequest(_) => todo!(),
 
         // Client message handling, shouldn't be reach.
         Command::ChunkResponse(_, _, _)
@@ -45,6 +47,8 @@ async fn dispatch(
         | Command::ErrorOccured(_)
         | Command::StoreResponse()
         | Command::FindValueResponse(_)
+        | Command::AnnounceResponse()
+        | Command::GetPeersResponse(_)
         | Command::MessageResponse() => unreachable!(),
     };
 
