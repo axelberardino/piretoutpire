@@ -21,7 +21,7 @@ macro_rules! log {
     };
 }
 
-// FIXME: rename? Handle handshake.
+// Give the file metadata information given its id/crc.
 pub async fn serve_file_info(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, crc: u32) -> Command {
     let header = "[FILE_INFO]".to_owned().blue().on_truecolor(35, 38, 39).bold();
     let prefix = format!(" received crc {} from {}", crc, sender_addr,);

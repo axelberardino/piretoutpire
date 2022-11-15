@@ -8,11 +8,12 @@ use crate::{
     read_all,
 };
 use errors::AnyResult;
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, ops::Deref, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufWriter},
     net::{tcp::WriteHalf, TcpStream},
     sync::Mutex,
+    time::{sleep, timeout},
 };
 
 // Command handler -------------------------------------------------------------
@@ -20,11 +21,12 @@ use tokio::{
 // Interpret a command and act accordingly. This is where request/response are
 // handled.
 async fn dispatch(
-    ctx: Arc<Mutex<Context>>,
+    main_ctx: Arc<Mutex<Context>>,
     sender_addr: SocketAddr,
     writer: &mut BufWriter<WriteHalf<'_>>,
     request: Command,
 ) -> AnyResult<()> {
+    let ctx = Arc::clone(&main_ctx);
     let res_command = match request {
         // Server message handling
         Command::FileInfoRequest(crc) => serve_file_info(ctx, sender_addr, crc).await,
@@ -47,9 +49,18 @@ async fn dispatch(
     };
 
     let response: Vec<u8> = res_command.into();
+    {
+        // Check if we need to simulate a slowness.
+        let guard = main_ctx.lock().await;
+        let ctx = guard.deref();
+        if let Some(wait_time) = ctx.slowness {
+            sleep(wait_time).await;
+        }
+    }
+
     eprintln!("sending buf {:?}", &response);
-    writer.write_all(response.as_slice()).await?;
-    writer.flush().await?;
+    timeout(Duration::from_millis(200), writer.write_all(response.as_slice())).await??;
+    timeout(Duration::from_millis(200), writer.flush()).await??;
     Ok(())
 }
 

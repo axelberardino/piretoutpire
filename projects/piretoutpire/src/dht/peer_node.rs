@@ -19,7 +19,7 @@ pub struct PeerNode {
     last_response: Option<Instant>,
     // Number of queries made in a row
     #[serde(skip)]
-    nb_successive_queries: usize,
+    nb_successive_try: usize,
 }
 
 // Status of a peer.
@@ -33,7 +33,7 @@ pub enum PeerStatus {
     Questionable,
     // Peer definitively quit
     Bad,
-    // Peer failed to answer, but we don't mark it s bad yet
+    // Peer status unknown, usually when loading the dht from a file.
     Unknown,
 }
 
@@ -45,7 +45,7 @@ impl PeerNode {
             addr,
             last_request: None,
             last_response: None,
-            nb_successive_queries: 0,
+            nb_successive_try: 0,
         }
     }
 
@@ -70,7 +70,7 @@ impl PeerNode {
             Some(last_req) => last_req,
             None => return PeerStatus::Unknown,
         };
-        if self.nb_successive_queries > 0 && last_request.elapsed() > Duration::from_secs(15) {
+        if self.nb_successive_try > 0 && last_request.elapsed() > Duration::from_secs(15) {
             return PeerStatus::Bad;
         }
         if self.last_response.is_some() {
@@ -82,7 +82,7 @@ impl PeerNode {
     // Update the last request made
     pub fn update_last_request(&mut self) {
         self.last_request = Some(Instant::now());
-        self.nb_successive_queries += 1;
+        self.nb_successive_try += 1;
     }
 
     // Update the last response made
@@ -92,6 +92,6 @@ impl PeerNode {
         if self.last_request.is_none() {
             self.last_request = Some(now);
         }
-        self.nb_successive_queries = 0;
+        self.nb_successive_try = 0;
     }
 }

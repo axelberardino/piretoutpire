@@ -15,6 +15,7 @@ use std::{
     ops::{Deref, DerefMut},
     path::Path,
     sync::Arc,
+    time::Duration,
 };
 use tokio::{
     self,
@@ -32,7 +33,7 @@ pub struct Manager {
 }
 
 impl Manager {
-    // BASICS ------------------------------------------------------------------
+    // CONSTRUCTOR -------------------------------------------------------------
 
     // Expect an address like: "127.0.0.1:8080".parse()
     pub fn new(id: u32, addr: SocketAddr, working_directory: String) -> Self {
@@ -44,6 +45,8 @@ impl Manager {
         }
     }
 
+    // OPTIONS -----------------------------------------------------------------
+
     // Set the max hop possible when searchin for a node.
     // None = default behavior (stop when no closest host is found).
     // N = force to hop N times even if not the best route.
@@ -52,14 +55,24 @@ impl Manager {
     }
 
     // Enable the recent peer cache. On small network, with non uniform id
-    /// distribution, caching peers could be hard. The "recent" peers cache is
-    /// used on top of the routing table, to help finding peers. On big network,
-    /// it's usually not needed and could be disactivated.
+    // distribution, caching peers could be hard. The "recent" peers cache is
+    // used on top of the routing table, to help finding peers. On big network,
+    // it's usually not needed and could be disactivated.
     pub async fn set_recent_peers_cache_enable(&mut self, value: bool) {
         let mut guard = self.ctx.lock().await;
         let ctx = guard.deref_mut();
         ctx.dht.set_recent_peers_cache_enable(value);
     }
+
+    // Force this peer to wait X ms before answering each rpc (for debug
+    // purpose).
+    pub async fn set_slowness(&mut self, value: Option<u64>) {
+        let mut guard = self.ctx.lock().await;
+        let ctx = guard.deref_mut();
+        ctx.slowness = value.map(|val| Duration::from_millis(val));
+    }
+
+    // CONFIG ------------------------------------------------------------------
 
     // Dump the dht into a file.
     pub async fn dump_dht(&self, path: &Path) -> AnyResult<()> {
@@ -76,6 +89,8 @@ impl Manager {
         ctx.dht.load_from_file(path).await?;
         Ok(())
     }
+
+    // LOCAL FILES -------------------------------------------------------------
 
     // FIXME
     // Load all files in a given directory to be shared on the peer network.
@@ -96,6 +111,8 @@ impl Manager {
         Ok(())
     }
 
+    // SERVER ------------------------------------------------------------------
+
     // Start the backend server to listen to command and seed.
     pub async fn start_server(&self) -> AnyResult<()> {
         let listener = TcpListener::bind(self.addr).await?;
@@ -109,7 +126,7 @@ impl Manager {
 
     // RPC ---------------------------------------------------------------------
 
-    // Start to bootstrap the DHT from an entry point (any available peer).
+    // Start to bootstrap the DHT from an entry point (any available peers).
     // Start by pinging it, then send a find_node on ourself.
     pub async fn bootstrap(&mut self, peer_addr: SocketAddr) -> AnyResult<()> {
         let peer = Peer {
@@ -202,8 +219,12 @@ impl Manager {
         };
 
         if let Some(peer) = peer {
-            ping(Arc::clone(&self.ctx), peer.into(), self.id).await?;
-            Ok(true)
+            if ping(Arc::clone(&self.ctx), peer.into(), self.id).await.is_err() {
+                // mark
+                Ok(false)
+            } else {
+                Ok(true)
+            }
         } else {
             Ok(false)
         }
@@ -378,7 +399,7 @@ impl Manager {
 
 // Helpers ---------------------------------------------------------------------
 
-// Ping a peer, and put it's id into our dht.
+// Ping a peer from its real address, ask him its id and put it into our dht.
 async fn ping(ctx: Arc<Mutex<Context>>, peer: Peer, sender: u32) -> AnyResult<u32> {
     let stream = Arc::new(Mutex::new(TcpStream::connect(peer.addr).await?));
     let target = handle_ping(stream, sender).await?;

@@ -10,22 +10,30 @@ use std::{net::SocketAddr, path::Path};
 #[clap(about = "CLI for the p2p network", long_about = None)]
 
 struct Cli {
-    /// Listening address for receiving commands
+    /// Listening address for receiving commands.
     #[clap(default_value_t = String::from("127.0.0.1:4000"))]
     #[clap(long, value_name = "host:port")]
     server_addr: String,
 
-    /// Peer id (empty = random)
+    /// Peer id (empty = random).
     #[clap(long, value_name = "id")]
     peer_id: Option<u32>,
 
-    /// Max hop (empty = default behavior, search until not closer)
+    /// Max hop (empty = default behavior, search until not closer).
+    /// Setting this option will enable a more greedy strategy for peers
+    /// finding.
     #[clap(long, value_name = "nb")]
     max_hop: Option<u32>,
 
-    /// Force this peer to wait X ms before answering each rpc (for debug purpose)
+    /// Force this peer to wait X ms before answering each rpc (for debug
+    /// purpose).
     #[clap(long, value_name = "ms")]
-    slowness: Option<u32>,
+    slowness: Option<u64>,
+
+    /// Config file for dht.
+    #[clap(default_value_t = String::from("/tmp/dht"))]
+    #[clap(long, value_name = "dht-filename")]
+    dht_filename: String,
 
     /// Disable the recent peers cache. On small network, with non uniform id
     /// distribution, caching peers could be hard. The "recent" peers cache is
@@ -139,12 +147,13 @@ fn get_random_id() -> u32 {
 
 #[tokio::main]
 async fn main() -> AnyResult<()> {
-    let args = Cli::parse();
+    let mut args = Cli::parse();
     let peer_id = args.peer_id.unwrap_or_else(|| get_random_id());
     let own_addr: SocketAddr = args.server_addr.parse()?;
 
     // HACK
     let (own_addr, peer_id) = if args.command == Command::Seed {
+        args.dht_filename = "/tmp/dht_server".to_owned();
         ("127.0.0.1:4000".parse()?, 0)
     } else {
         ("127.0.0.1:4001".parse()?, 1)
@@ -159,7 +168,8 @@ async fn main() -> AnyResult<()> {
     manager
         .set_recent_peers_cache_enable(!args.disable_recent_peers_cache)
         .await;
-    if manager.load_dht(Path::new("/tmp/dht")).await.is_err() {
+    manager.set_slowness(args.slowness).await;
+    if manager.load_dht(Path::new(&args.dht_filename)).await.is_err() {
         println!("can't find dht file");
     }
 
@@ -170,7 +180,7 @@ async fn main() -> AnyResult<()> {
         }
         Command::Bootstrap { peer_addr } => {
             manager.bootstrap(peer_addr.parse()?).await?;
-            manager.dump_dht(Path::new("/tmp/dht")).await?;
+            manager.dump_dht(Path::new(&args.dht_filename)).await?;
         }
         Command::Ping { target } => {
             let succeed = manager.ping(target).await?;
@@ -204,7 +214,7 @@ async fn main() -> AnyResult<()> {
         }
         Command::Leech => {
             manager.bootstrap("127.0.0.1:4000".parse()?).await?;
-            manager.dump_dht(Path::new("/tmp/dht")).await?;
+            manager.dump_dht(Path::new(&args.dht_filename)).await?;
             let succeed = manager.send_message(0, "hello dear server".to_owned()).await?;
             println!("Message sent: {}", succeed);
 

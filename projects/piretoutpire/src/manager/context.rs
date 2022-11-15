@@ -2,7 +2,7 @@ use crate::{
     dht::dht::DistributedHashTable,
     file::{file_chunk::FileChunk, torrent_file::TorrentFile},
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 // Context handle everything about shared context
 pub struct Context {
@@ -14,6 +14,9 @@ pub struct Context {
 
     // Where all torrents and their metadata are
     pub working_directory: String,
+
+    /// Simulate a slowness, for debug purpose.
+    pub slowness: Option<Duration>,
 }
 
 impl Context {
@@ -23,6 +26,7 @@ impl Context {
             dht: DistributedHashTable::new(self_id),
             available_torrents: HashMap::new(),
             working_directory,
+            slowness: None,
         }
     }
 }
@@ -38,6 +42,7 @@ impl Context {
             dht,
             available_torrents: HashMap::new(),
             working_directory: "".to_owned(),
+            slowness: None,
         }
     }
 }

@@ -1,8 +1,16 @@
 use super::{client::handle_find_node, context::Context};
-use crate::{network::protocol::Peer, utils::distance};
+use crate::{
+    network::{api::CONNECTION_TIMEOUT_MS, protocol::Peer},
+    utils::distance,
+};
 use errors::{AnyError, AnyResult};
-use std::{collections::HashSet, future::Future, ops::DerefMut, sync::Arc};
-use tokio::{self, net::TcpStream, sync::Mutex};
+use std::{collections::HashSet, future::Future, ops::DerefMut, sync::Arc, time::Duration};
+use tokio::{
+    self,
+    net::TcpStream,
+    sync::Mutex,
+    time::{sleep, timeout},
+};
 
 // Search for a requested node until finding it. Will stop if the most closest
 // ones found in a row are not closer.
@@ -170,17 +178,42 @@ pub async fn query_find_node(
     sender: u32,
     target: u32,
 ) -> AnyResult<Vec<Peer>> {
-    let stream = Arc::new(Mutex::new(TcpStream::connect(peer.addr).await?));
-    let peers = handle_find_node(stream, sender, target).await?;
-
-    // The peer just answered us, let's add him into our dht.
-    {
+    let slowness = {
         let mut guard = ctx.lock().await;
         let ctx = guard.deref_mut();
-        ctx.dht.add_node(peer.id, peer.addr).await;
-    }
+        ctx.slowness
+        // FIXME mark node as tri'ed!
+        // get timeout
+    };
 
-    Ok(peers)
+    let connexion = timeout(
+        Duration::from_millis(CONNECTION_TIMEOUT_MS),
+        TcpStream::connect(peer.addr),
+    )
+    .await;
+    match connexion {
+        Ok(Ok(connexion)) => {
+            let stream = Arc::new(Mutex::new(connexion));
+            if let Some(wait_time) = slowness {
+                sleep(wait_time).await;
+            }
+            let peers = handle_find_node(stream, sender, target).await?;
+
+            // The peer just answered us, let's add him into our dht.
+            {
+                let mut guard = ctx.lock().await;
+                let ctx = guard.deref_mut();
+                // FIXME mark node as completed
+                ctx.dht.add_node(peer.id, peer.addr).await;
+            }
+
+            Ok(peers)
+        }
+        _ => {
+            // Peer is not connected, or timeout. Just ignore it.
+            Ok(vec![])
+        }
+    }
 }
 
 #[cfg(test)]

@@ -1,11 +1,16 @@
 use super::protocol::Command;
 use errors::{bail, AnyResult};
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
     sync::Mutex,
+    time::timeout,
 };
+
+pub const READ_TIMEOUT_MS: u64 = 200;
+pub const WRITE_TIMEOUT_MS: u64 = 200;
+pub const CONNECTION_TIMEOUT_MS: u64 = 200;
 
 // UTILS -----------------------------------------------------------------------
 
@@ -22,7 +27,12 @@ macro_rules! read_all {
         let mut res_buf: Vec<u8> = Vec::new();
         const BUF_SIZE: usize = 8 * 1024;
         let mut buf: [u8; BUF_SIZE] = [0; BUF_SIZE];
-        while let Ok(bytes) = $reader.read(&mut buf[..]).await {
+        while let Ok(bytes) = tokio::time::timeout(
+            std::time::Duration::from_millis(crate::network::api::READ_TIMEOUT_MS),
+            $reader.read(&mut buf[..]),
+        )
+        .await?
+        {
             if bytes == 0 {
                 break;
             }
@@ -43,8 +53,8 @@ pub async fn send_raw_unary(stream: Arc<Mutex<TcpStream>>, request: &[u8]) -> An
     let mut reader = tokio::io::BufReader::new(reader);
     let mut writer = tokio::io::BufWriter::new(writer);
 
-    writer.write_all(request).await?;
-    writer.flush().await?;
+    timeout(Duration::from_millis(WRITE_TIMEOUT_MS), writer.write_all(request)).await??;
+    timeout(Duration::from_millis(WRITE_TIMEOUT_MS), writer.flush()).await??;
 
     let raw_chunk = read_all!(reader);
     let len = raw_chunk.len();
