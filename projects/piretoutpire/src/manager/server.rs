@@ -199,14 +199,19 @@ pub async fn serve_announce(
     let header = "[ANNOUNCE]".to_owned().yellow().on_truecolor(35, 38, 39).bold();
     log!(
         header,
-        " user {}, announce: peer {} has the file {}",
+        " peer {}({}), announce: he has the file {}",
         sender_addr,
         sender,
         crc
     );
 
-    // FIXME
-    // ctx.available_torrents;
+    ctx.dht.store_file_peer(
+        crc,
+        Peer {
+            id: sender,
+            addr: sender_addr,
+        },
+    );
 
     Command::AnnounceResponse()
 }
@@ -218,12 +223,11 @@ pub async fn serve_get_peers(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, 
 
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();
-    // FIXME
-    // ctx.available_torrents;
-    let peers = Some(vec![]);
+    let peers = ctx.dht.get_file_peers(crc);
 
     match peers {
         Some(peers) => {
+            let peers = peers.map(Clone::clone).collect();
             log!(header, "{}={:?}", prefix, peers);
             Command::GetPeersResponse(peers)
         }

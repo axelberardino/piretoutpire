@@ -1,7 +1,14 @@
 use super::{peer_node::PeerNode, routing_table::RoutingTable};
+use crate::network::protocol::Peer;
 use errors::AnyResult;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs::OpenOptions, io::BufReader, net::SocketAddr, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    fs::OpenOptions,
+    io::BufReader,
+    net::SocketAddr,
+    path::Path,
+};
 
 // The DHT is a way to handle a collaborative hash map. It allows to maintain a
 // decentralized network.
@@ -10,6 +17,7 @@ pub struct DistributedHashTable {
     id: u32,
     routing_table: RoutingTable,
     kv_store: HashMap<u32, String>,
+    files_store: HashMap<u32, HashSet<Peer>>,
 }
 
 // Intermediary structure to serialize and deserialize dht peers.
@@ -19,6 +27,7 @@ struct Config {
     peers: Vec<PeerNode>,
     peers_lru: Vec<PeerNode>,
     kv_store: HashMap<u32, String>,
+    files_store: HashMap<u32, Vec<Peer>>,
 }
 
 impl DistributedHashTable {
@@ -28,6 +37,7 @@ impl DistributedHashTable {
             id,
             routing_table: RoutingTable::new(id),
             kv_store: HashMap::new(),
+            files_store: HashMap::new(),
         }
     }
 
@@ -94,6 +104,11 @@ impl DistributedHashTable {
                 .map(Clone::clone)
                 .collect(),
             kv_store: self.kv_store.clone(),
+            files_store: self
+                .files_store
+                .iter()
+                .map(|(key, peers)| (*key, peers.into_iter().map(Clone::clone).collect::<Vec<_>>()))
+                .collect(),
         };
 
         let file = OpenOptions::new()
@@ -118,6 +133,11 @@ impl DistributedHashTable {
             self.add_peer_node(peer).await;
         }
         self.kv_store = config.kv_store;
+        self.files_store = config
+            .files_store
+            .into_iter()
+            .map(|(key, peers)| (key, peers.into_iter().collect::<HashSet<_>>()))
+            .collect();
 
         Ok(())
     }
@@ -131,6 +151,26 @@ impl DistributedHashTable {
     // Get a stored value from its key.
     pub fn get_value(&self, key: u32) -> Option<&String> {
         self.kv_store.get(&key)
+    }
+
+    // Store a given peer file owner for a given key.
+    // Value will be added to the list.
+    pub fn store_file_peer(&mut self, key: u32, peer: Peer) {
+        self.files_store
+            .entry(key)
+            .and_modify(|peers| {
+                peers.insert(peer.clone());
+            })
+            .or_insert_with(|| {
+                let mut set = HashSet::new();
+                set.insert(peer);
+                set
+            });
+    }
+
+    // Get a list of peers who own a given file.
+    pub fn get_file_peers(&self, key: u32) -> Option<impl Iterator<Item = &Peer>> {
+        self.files_store.get(&key).and_then(|peers| Some(peers.iter()))
     }
 }
 

@@ -6,6 +6,7 @@ use crate::{
     },
 };
 use errors::{bail, AnyError};
+use serde::{Deserialize, Serialize};
 use std::{fmt::Display, net::SocketAddr};
 
 // Protocol constants ----------------------------------------------------------
@@ -557,7 +558,7 @@ impl From<FileInfo> for Vec<u8> {
 // Peer ------------------------------------------------------------------------
 
 // Struct used to hold a peer.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Peer {
     pub id: u32,
     pub addr: SocketAddr,

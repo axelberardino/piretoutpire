@@ -395,6 +395,27 @@ impl Manager {
 
         Ok(())
     }
+
+    // Declare to closest peers that we're sharing a file.
+    pub async fn announce(&mut self, crc: u32) -> AnyResult<bool> {
+        Ok(true)
+    }
+
+    // Get all peers who owned a file, given its crc.
+    pub async fn get_peers(&mut self, crc: u32) -> AnyResult<Option<Vec<Peer>>> {
+        // Start to search locally.
+        {
+            let guard = self.ctx.lock().await;
+            let ctx = guard.deref();
+            if let Some(peer_iter) = ctx.dht.get_file_peers(crc) {
+                return Ok(Some(peer_iter.map(Clone::clone).collect()));
+            };
+        }
+
+        // FIXME: search online.
+
+        Ok(None)
+    }
 }
 
 // Helpers ---------------------------------------------------------------------

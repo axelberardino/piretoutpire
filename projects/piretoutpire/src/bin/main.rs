@@ -135,6 +135,24 @@ pub enum Command {
         #[clap(value_parser)]
         message: String,
     },
+
+    /// Send to closest node the crc of the file we're sharing
+    #[clap(arg_required_else_help = true)]
+    #[clap(name = "announce")]
+    Announce {
+        /// Crc of the file
+        #[clap(value_parser)]
+        crc: u32,
+    },
+
+    /// Get the peers who are owning the wanted file
+    #[clap(arg_required_else_help = true)]
+    #[clap(name = "get-peers")]
+    GetPeers {
+        /// Crc of the file
+        #[clap(value_parser)]
+        crc: u32,
+    },
 }
 
 // Mode ------------------------------------------------------------------------
@@ -211,6 +229,14 @@ async fn main() -> AnyResult<()> {
         Command::Message { target, message } => {
             let succeed = manager.send_message(target, message).await?;
             println!("Message send and acknowledge: {}", succeed);
+        }
+        Command::Announce { crc } => {
+            let succeed = manager.announce(crc).await?;
+            println!("Announced we're sharing the file. Acknowledge: {}", succeed);
+        }
+        Command::GetPeers { crc } => {
+            let peers = manager.get_peers(crc).await?;
+            println!("Peers who own this file are: {:?}", peers);
         }
         Command::Leech => {
             manager.bootstrap("127.0.0.1:4000".parse()?).await?;
