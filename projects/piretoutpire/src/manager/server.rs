@@ -184,3 +184,52 @@ pub async fn serve_message(_: Arc<Mutex<Context>>, sender_addr: SocketAddr, mess
 
     Command::MessageResponse()
 }
+
+// Announce is a way to tell a peer that a given user own a file (by given the
+// crc as an identifier).
+pub async fn serve_announce(
+    ctx: Arc<Mutex<Context>>,
+    sender_addr: SocketAddr,
+    sender: u32,
+    crc: u32,
+) -> Command {
+    let mut guard = ctx.lock().await;
+    let ctx = guard.deref_mut();
+
+    let header = "[ANNOUNCE]".to_owned().yellow().on_truecolor(35, 38, 39).bold();
+    log!(
+        header,
+        " user {}, announce: peer {} has the file {}",
+        sender_addr,
+        sender,
+        crc
+    );
+
+    // FIXME
+    // ctx.available_torrents;
+
+    Command::AnnounceResponse()
+}
+
+// Get the list of all peers which are sharing a file, given its id/crc.
+pub async fn serve_get_peers(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, crc: u32) -> Command {
+    let header = "[GET_PEERS]".to_owned().blue().on_truecolor(35, 38, 39).bold();
+    let prefix = format!(" peer {}, ask peers for {}", sender_addr, crc);
+
+    let mut guard = ctx.lock().await;
+    let ctx = guard.deref_mut();
+    // FIXME
+    // ctx.available_torrents;
+    let peers = Some(vec![]);
+
+    match peers {
+        Some(peers) => {
+            log!(header, "{}={:?}", prefix, peers);
+            Command::GetPeersResponse(peers)
+        }
+        None => {
+            log!(header, "{}, but the key was not found", prefix);
+            Command::ErrorOccured(ErrorCode::FileNotFound)
+        }
+    }
+}

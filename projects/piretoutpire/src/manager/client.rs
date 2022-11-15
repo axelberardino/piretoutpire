@@ -2,7 +2,7 @@ use super::context::Context;
 use crate::{
     file::{file_chunk::FileChunk, torrent_file::TorrentFile},
     network::{
-        api::{file_chunk, file_info, find_node, find_value, ping, send_message, store},
+        api::{announce, file_chunk, file_info, find_node, find_value, get_peers, ping, send_message, store},
         protocol::{Command, ErrorCode, FileInfo, Peer},
     },
 };
@@ -158,6 +158,28 @@ pub async fn handle_message(stream: Arc<Mutex<TcpStream>>, message: String) -> A
 
     match command {
         Command::MessageResponse() => Ok(()),
+        Command::ErrorOccured(error) => bail!("peer return error: {}", error),
+        _ => bail!("Wrong command received: {:?}", command),
+    }
+}
+
+// Send to a peer that a given peer own a file (by its crc).
+pub async fn handle_announce(stream: Arc<Mutex<TcpStream>>, sender: u32, crc: u32) -> AnyResult<()> {
+    let command = announce(Arc::clone(&stream), sender, crc).await?;
+
+    match command {
+        Command::AnnounceResponse() => Ok(()),
+        Command::ErrorOccured(error) => bail!("peer return error: {}", error),
+        _ => bail!("Wrong command received: {:?}", command),
+    }
+}
+
+// Get the list of peers who own a given file (by its crc).
+pub async fn handle_get_peers(stream: Arc<Mutex<TcpStream>>, crc: u32) -> AnyResult<Vec<Peer>> {
+    let command = get_peers(Arc::clone(&stream), crc).await?;
+
+    match command {
+        Command::GetPeersResponse(found_peers) => Ok(found_peers),
         Command::ErrorOccured(error) => bail!("peer return error: {}", error),
         _ => bail!("Wrong command received: {:?}", command),
     }

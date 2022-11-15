@@ -1,8 +1,8 @@
 use super::context::Context;
 use crate::{
     manager::server::{
-        serve_file_chunk, serve_file_info, serve_find_node, serve_find_value, serve_message, serve_ping,
-        serve_store,
+        serve_announce, serve_file_chunk, serve_file_info, serve_find_node, serve_find_value,
+        serve_get_peers, serve_message, serve_ping, serve_store,
     },
     network::protocol::Command,
     read_all,
@@ -36,8 +36,8 @@ async fn dispatch(
         Command::StoreRequest(key, message) => serve_store(ctx, sender_addr, key, message).await,
         Command::FindValueRequest(key) => serve_find_value(ctx, sender_addr, key).await,
         Command::MessageRequest(message) => serve_message(ctx, sender_addr, message).await,
-        Command::AnnounceRequest(_, _) => todo!(),
-        Command::GetPeersRequest(_) => todo!(),
+        Command::AnnounceRequest(sender, crc) => serve_announce(ctx, sender_addr, sender, crc).await,
+        Command::GetPeersRequest(crc) => serve_get_peers(ctx, sender_addr, crc).await,
 
         // Client message handling, shouldn't be reach.
         Command::ChunkResponse(_, _, _)

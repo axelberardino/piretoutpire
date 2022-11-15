@@ -116,3 +116,17 @@ pub async fn send_message(stream: Arc<Mutex<TcpStream>>, message: String) -> Any
     let raw_response = send_raw_unary(stream, request.as_slice()).await?;
     raw_response.as_slice().try_into()
 }
+
+// Send to a peer that a given peer own a file (by its crc).
+pub async fn announce(stream: Arc<Mutex<TcpStream>>, sender: u32, crc: u32) -> AnyResult<Command> {
+    let request: Vec<u8> = Command::AnnounceRequest(sender, crc).into();
+    let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+    raw_response.as_slice().try_into()
+}
+
+// Get the list of peers who own a given file (by its crc).
+pub async fn get_peers(stream: Arc<Mutex<TcpStream>>, crc: u32) -> AnyResult<Command> {
+    let request: Vec<u8> = Command::GetPeersRequest(crc).into();
+    let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+    raw_response.as_slice().try_into()
+}
