@@ -198,8 +198,9 @@ async fn main() -> AnyResult<()> {
             manager.start_server().await?;
         }
         Command::Bootstrap { peer_addr } => {
-            manager.bootstrap(peer_addr.parse()?).await?;
+            let peer_found = manager.bootstrap(peer_addr.parse()?).await?;
             manager.dump_dht(Path::new(&args.dht_filename)).await?;
+            println!("Bootstrap done, find node: {:?}", peer_found);
         }
         Command::Ping { target } => {
             let succeed = manager.ping(target).await?;

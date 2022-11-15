@@ -23,8 +23,10 @@ bacon.toml
 .vscode/launch.json
 
 TODO
+demo/pire2pire
+pire2pire
 
 features/chat/personal_memories/build
 .vim/coc-settings.json
 gql/
-*.sh
+

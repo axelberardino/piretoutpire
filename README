@@ -20,12 +20,18 @@ Then, there is a CLI (using clap and colored) which can be called like that:
 cargo run -- help
 ```
 
+It's also possible to generate the binary using:
+```sh
+make build
+./demo/pire2pire --help
+```
+
 # Demo
 
 A demo is provided to show all available features.
 
-```
-TODO
+```sh
+make demo
 ```
 
 # Tests

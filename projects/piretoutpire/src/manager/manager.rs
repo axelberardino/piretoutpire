@@ -120,6 +120,8 @@ impl Manager {
     pub async fn start_server(&self) -> AnyResult<()> {
         let listener = TcpListener::bind(self.addr).await?;
 
+        // FIXME start cleaning function here.
+
         loop {
             let (stream, _) = listener.accept().await?;
             let ctx = Arc::clone(&self.ctx);
@@ -131,7 +133,7 @@ impl Manager {
 
     // Start to bootstrap the DHT from an entry point (any available peers).
     // Start by pinging it, then send a find_node on ourself.
-    pub async fn bootstrap(&mut self, peer_addr: SocketAddr) -> AnyResult<()> {
+    pub async fn bootstrap(&mut self, peer_addr: SocketAddr) -> AnyResult<Option<Peer>> {
         let peer = Peer {
             id: u32::MAX,
             addr: peer_addr,
@@ -148,7 +150,7 @@ impl Manager {
 
         // Ask for the entry node for ourself. He will add us into its table,
         // then give back 4 close nodes.
-        find_closest_node(
+        let peer = find_closest_node(
             Arc::clone(&self.ctx),
             peer,
             self.id,
@@ -157,7 +159,7 @@ impl Manager {
             query_find_node,
         )
         .await?;
-        Ok(())
+        Ok(peer)
     }
 
     // Find node will try to return the wanted peer, or the 4 most closest ones
