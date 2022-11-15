@@ -42,6 +42,15 @@ only seems to handle peer id.
 It's currently implemented as a tree, but it could have been made with a single
 array of 128 items.
 
+Also, all peers which is not responding is marked as "questionnable", then as
+"bad" if it's still not answering. Adding new peer into a full bucket, can only
+be done if there's "bad" peers to replace. This means that peers that have
+stayed longer in the network have the priority. This is done on purpose, as the
+authors of the Kademlia found that computers that have been around the longest
+in the network are much more likely to continue staying on than new peers. Thus,
+old peers are favored to maximize connectivity in the network from experimental
+observations of how peer-to-peer network participants behave.
+
 ## Distributed hash table (DHT)
 
 The choice has been made to implement the Kademlia DHT describe in this paper:
@@ -61,7 +70,7 @@ peers. We regroup these 12 peers, sort them by distance, and only keep 4 of
 them. We're repeating this process, until we found our nound, or if the next
 rounge of peers is not closer to target peer id.
 
-Everytime, we're contacting a peer, this peer save us in his routing table. It
+Everytime, we're contacting a peer, this peer saves us in his routing table. It
 allows the peers network to be refreshed automatically.
 
 ### Join
@@ -214,3 +223,9 @@ peer should be asked only for its closest nodes, this cache shouldn't be hit
 often in a big network. 100 entries is small, so there is no impact on a big
 network. But for a small network, it allows peers far from each others to be
 seen.
+
+# Protocol
+
+All rpc are hand crafted. As this project is kinda there to show how to make its
+own p2p network, let's not rely on grpc and protobuf (it is also one less
+dependency to care about).
