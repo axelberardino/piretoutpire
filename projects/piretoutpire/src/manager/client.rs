@@ -175,11 +175,12 @@ pub async fn handle_announce(stream: Arc<Mutex<TcpStream>>, sender: u32, crc: u3
 }
 
 // Get the list of peers who own a given file (by its crc).
-pub async fn handle_get_peers(stream: Arc<Mutex<TcpStream>>, crc: u32) -> AnyResult<Vec<Peer>> {
+pub async fn handle_get_peers(stream: Arc<Mutex<TcpStream>>, crc: u32) -> AnyResult<Option<Vec<Peer>>> {
     let command = get_peers(Arc::clone(&stream), crc).await?;
 
     match command {
-        Command::GetPeersResponse(found_peers) => Ok(found_peers),
+        Command::GetPeersResponse(found_peers) => Ok(Some(found_peers)),
+        Command::ErrorOccured(error) if error == ErrorCode::FileNotFound => Ok(None),
         Command::ErrorOccured(error) => bail!("peer return error: {}", error),
         _ => bail!("Wrong command received: {:?}", command),
     }

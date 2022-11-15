@@ -608,7 +608,7 @@ impl From<PeerNode> for Peer {
 // Error codes -----------------------------------------------------------------
 
 #[repr(u8)]
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum ErrorCode {
     Unknown = 0,
     FileNotFound = 1,
