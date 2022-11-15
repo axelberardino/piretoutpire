@@ -70,6 +70,8 @@ peers. We regroup these 12 peers, sort them by distance, and only keep 4 of
 them. We're repeating this process, until we found our nound, or if the next
 rounge of peers is not closer to target peer id.
 
+![find_node](find_node.png)
+
 Everytime, we're contacting a peer, this peer saves us in his routing table. It
 allows the peers network to be refreshed automatically.
 

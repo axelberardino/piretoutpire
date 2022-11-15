@@ -1,5 +1,7 @@
 # PireToutPire
 
+![logo](doc/pire_to_pire.png)
+
 This project implements a simplified p2p network. It allows to send message from
 a peer to another in a decentralized manner. Also, file sharing (like
 bittorrent) is also handled.
