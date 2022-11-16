@@ -1,7 +1,8 @@
 #!/bin/bash
 
 BASE_DIR=/tmp/p2p-demo
-DEMOS="simple-communication.sh"
+DEMOS="simple-communication.sh message-network-of-2.sh message-network-of-3.sh"
+# DEMOS="message-network-of-3.sh"
 
 trap "echo" SIGTERM
 

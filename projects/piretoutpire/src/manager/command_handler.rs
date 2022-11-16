@@ -93,7 +93,7 @@ async fn dispatch(
         ctx.write_timeout
     };
 
-    eprintln!("sending buf {:?}", &response);
+    // eprintln!("sending buf {:?}", &response);
     timeout(write_timeout, writer.write_all(response.as_slice())).await??;
     timeout(write_timeout, writer.flush()).await??;
     Ok(())
@@ -114,7 +114,7 @@ pub async fn listen_to_command(
     };
 
     let peer_addr = stream.peer_addr()?;
-    eprintln!("{} is connected", peer_addr);
+    // eprintln!("{} is connected", peer_addr);
     let (reader, writer) = stream.split();
     let mut reader = tokio::io::BufReader::new(reader);
     let mut writer = tokio::io::BufWriter::new(writer);

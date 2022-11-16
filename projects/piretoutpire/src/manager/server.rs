@@ -23,7 +23,7 @@ macro_rules! log {
 
 // Give the file metadata information given its id/crc.
 pub async fn serve_file_info(ctx: Arc<Mutex<Context>>, incoming_addr: SocketAddr, crc: u32) -> Command {
-    let header = "[FILE_INFO]".to_owned().blue().on_truecolor(35, 38, 39).bold();
+    let header = "[FILE_INFO]".to_owned().cyan().on_truecolor(35, 38, 39).bold();
     let prefix = format!(" asked crc {} from {}", crc, incoming_addr,);
 
     let mut guard = ctx.lock().await;
@@ -54,7 +54,7 @@ pub async fn serve_file_chunk(
     crc: u32,
     chunk_id: u32,
 ) -> Command {
-    let header = "[CHUNK]".to_owned().blue().on_truecolor(35, 38, 39).bold();
+    let header = "[CHUNK]".to_owned().cyan().on_truecolor(35, 38, 39).bold();
     let prefix = format!(" asked by {} asking for {}/{}", incoming_addr, crc, chunk_id);
 
     let mut guard = ctx.lock().await;
@@ -211,7 +211,7 @@ pub async fn serve_announce(
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();
 
-    let header = "[ANNOUNCE]".to_owned().blue().on_truecolor(35, 38, 39).bold();
+    let header = "[ANNOUNCE]".to_owned().cyan().on_truecolor(35, 38, 39).bold();
     log!(
         header,
         " peer {}({}), announce: he has the file {}",
@@ -234,7 +234,7 @@ pub async fn serve_announce(
 
 // Get the list of all peers which are sharing a file, given its id/crc.
 pub async fn serve_get_peers(ctx: Arc<Mutex<Context>>, incoming_addr: SocketAddr, crc: u32) -> Command {
-    let header = "[GET_PEERS]".to_owned().blue().on_truecolor(35, 38, 39).bold();
+    let header = "[GET_PEERS]".to_owned().cyan().on_truecolor(35, 38, 39).bold();
     let prefix = format!(" peer {}, ask peers for {}", incoming_addr, crc);
 
     let mut guard = ctx.lock().await;

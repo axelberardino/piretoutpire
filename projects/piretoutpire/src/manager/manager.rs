@@ -199,7 +199,6 @@ impl Manager {
             loop {
                 interval.tick().await;
                 let _ = dump_dht(Arc::clone(&ctx), &dht_config_filename).await;
-                println!("dht dumped!");
             }
         });
 

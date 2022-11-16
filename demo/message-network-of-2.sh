@@ -7,7 +7,7 @@ if [ "$cur_dir" = "demo" ]; then
 fi
 source "${prefix}/utils.sh" &>/dev/null
 
-title "SIMPLE COMMUNICATION BETWEEN 2 PEERS"
+title "DIRECT MESSSAGE BETWEEN 2 USERS"
 echo
 
 section "Clean folder $DATA_DIR"
@@ -21,12 +21,13 @@ launch_bg "./$BIN --server-addr=\"127.0.0.1:4001\" --peer-id=1 --dht-filename=/t
 server_pid=$!
 sleep 1
 
-section "Launch peer B"
+section "Bootstrap peer B"
 launch "./$BIN --server-addr=\"127.0.0.1:4002\" --peer-id=2 --dht-filename=/tmp/p2p-demo/b.dht bootstrap 127.0.0.1:4001"
 
-section "Peer A (seed server) should have received a ping from B,\n\
-    acknowledge B as 'peer 2' and\n\
-    sent back a list peers with only 'peer 2' in it"
+section "Send message from B to A"
+launch "./$BIN --server-addr=\"127.0.0.1:4002\" --peer-id=2 --dht-filename=/tmp/p2p-demo/b.dht message 1 \"Hello A, this is B speaking!\""
+
+section "Peer A (seed server) should have received a ping from B and get its message"
 launch "cat $LOG"
 
 section "Stop the seed peer"
