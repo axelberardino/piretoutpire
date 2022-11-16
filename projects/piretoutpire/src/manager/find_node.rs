@@ -49,20 +49,10 @@ where
         )
         .await?;
 
-        dbg!(next_queue
-            .iter()
-            .map(|x| (x.id, distance(x.id, target)))
-            .collect::<Vec<_>>());
-
         // Let's check if the best peers is better than the previous hop.
         let mut better_distance_found = false;
         if let Some(peer) = next_queue.first() {
             let distance = distance(peer.id, target);
-            println!(
-                "maxdist={} | peer={:04b}({}) target={:04b}({}) == {:04b}({})",
-                best_distance, peer.id, peer.id, target, target, distance, distance
-            );
-            dbg!(best_distance, distance, peer.id, target);
             if distance < best_distance {
                 best_distance = distance;
                 better_distance_found = true;
@@ -78,7 +68,6 @@ where
         queue.sort_by_key(|peer| distance(peer.id, target));
         queue.reverse();
         queue.dedup_by_key(|peer| peer.id);
-        dbg!(&queue);
 
         // Handle strategy here.
         if let Some(max_hop) = max_hop {
@@ -158,7 +147,6 @@ where
     }
 
     // Keep only non-visited nodes.
-    dbg!(&next_queue);
     next_queue.retain(|peer| !visited.contains(&peer.id));
 
     // Sort peers by relevancy (the closest first)

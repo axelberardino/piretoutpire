@@ -126,10 +126,7 @@ pub async fn handle_find_node(
     peer_has_responded(Arc::clone(&ctx), sender).await;
 
     match command {
-        Command::FindNodeResponse(peers_found) => {
-            eprintln!("received find node {:?}", &peers_found);
-            Ok(peers_found)
-        }
+        Command::FindNodeResponse(peers_found) => Ok(peers_found),
         Command::ErrorOccured(error) => bail!("peer return error: {}", error),
         _ => bail!("Wrong command received: {:?}", command),
     }

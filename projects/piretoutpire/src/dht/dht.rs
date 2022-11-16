@@ -93,6 +93,11 @@ impl DistributedHashTable {
         self.routing_table.clear().await;
     }
 
+    // Get the number of known peers.
+    pub async fn known_peers_count(&mut self) -> usize {
+        self.routing_table.get_all_peers().await.count()
+    }
+
     // Dump this dht into a file.
     pub async fn dump_to_file(&self, path: &Path) -> AnyResult<()> {
         let config = Config {

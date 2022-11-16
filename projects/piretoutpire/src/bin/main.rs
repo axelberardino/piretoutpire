@@ -200,9 +200,6 @@ async fn main() -> AnyResult<()> {
     };
     // !HACK
 
-    let info = format!("Peer ID is: {}, and own server address is {}", peer_id, own_addr);
-    println!("{}", info.truecolor(135, 138, 139).italic());
-
     let mut manager = Manager::new(
         peer_id,
         own_addr,
@@ -225,6 +222,14 @@ async fn main() -> AnyResult<()> {
             &args.dht_filename
         );
     }
+
+    let info = format!(
+        "Peer ID: {}, Peer address: {}, Known peers: {}",
+        peer_id,
+        own_addr,
+        manager.known_peers_count().await
+    );
+    println!("{}", info.truecolor(135, 138, 139).italic());
 
     match args.command {
         Command::Seed => {
@@ -273,8 +278,10 @@ async fn main() -> AnyResult<()> {
             println!("Peers who own this file are: {:?}", peers);
         }
         Command::Leech => {
-            manager.bootstrap("127.0.0.1:4000".parse()?).await?;
+            let peer_found = manager.bootstrap("127.0.0.1:4000".parse()?).await?;
             manager.dump_dht().await?;
+            println!("Bootstrap done, find node: {:?}", peer_found);
+
             let succeed = manager.send_message(0, "hello dear server".to_owned()).await?;
             println!("Message sent: {}", succeed);
 

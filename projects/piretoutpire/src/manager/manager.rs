@@ -124,6 +124,13 @@ impl Manager {
         Ok(())
     }
 
+    // Get the number of known peers.
+    pub async fn known_peers_count(&mut self) -> usize {
+        let mut guard = self.ctx.lock().await;
+        let ctx = guard.deref_mut();
+        ctx.dht.known_peers_count().await
+    }
+
     // LOCAL FILES -------------------------------------------------------------
 
     // FIXME load dir
