@@ -280,16 +280,16 @@ impl TryFrom<&[u8]> for Command {
                     let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
                     let list_size = u8_array_to_u32(&slice) as usize;
                     let res = (0..list_size).try_fold(
-                        (Vec::<Peer>::new(), ORDER_SIZE + 4),
+                        (Vec::<Peer>::new(), ORDER_SIZE + INT_SIZE),
                         |(mut acc, shift), _| {
                             let raw = &value[shift..];
                             // size of addr is after id (in pos 4).
-                            let slice: [u8; 4] = core::array::from_fn(|idx| value[shift + idx + 4]);
+                            let slice: [u8; 4] = core::array::from_fn(|idx| value[shift + idx + INT_SIZE]);
                             let addr_size = u8_array_to_u32(&slice) as usize;
 
                             let peer = Peer::try_from(raw)?;
                             acc.push(peer);
-                            Ok::<(Vec<Peer>, usize), AnyError>((acc, shift + addr_size + 4))
+                            Ok::<(Vec<Peer>, usize), AnyError>((acc, shift + PEER_SIZE + addr_size))
                         },
                     )?;
                     let (peers_list, _) = res;

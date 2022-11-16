@@ -117,11 +117,14 @@ pub async fn serve_find_node(
 }
 
 // Received the sender id, and response with this server id.
-pub async fn serve_ping(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, sender_id: u32) -> Command {
+pub async fn serve_ping(
+    ctx: Arc<Mutex<Context>>,
+    sender_addr: SocketAddr,
+    sender_id: u32,
+    own_id: u32,
+) -> Command {
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();
-
-    let own_id = ctx.dht.id();
     ctx.dht.add_node(sender_id, sender_addr).await;
 
     let header = "[PING]".to_owned().blue().on_truecolor(35, 38, 39).bold();

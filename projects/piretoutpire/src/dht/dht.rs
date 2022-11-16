@@ -14,7 +14,6 @@ use std::{
 // decentralized network.
 #[derive(Debug)]
 pub struct DistributedHashTable {
-    id: u32,
     routing_table: RoutingTable,
     kv_store: HashMap<u32, String>,
     files_store: HashMap<u32, HashSet<Peer>>,
@@ -23,7 +22,6 @@ pub struct DistributedHashTable {
 // Intermediary structure to serialize and deserialize dht peers.
 #[derive(Debug, Serialize, Deserialize)]
 struct Config {
-    id: u32,
     peers: Vec<PeerNode>,
     peers_lru: Vec<PeerNode>,
     kv_store: HashMap<u32, String>,
@@ -34,16 +32,10 @@ impl DistributedHashTable {
     // Initiate a new DHT for a given user.
     pub fn new(id: u32) -> Self {
         Self {
-            id,
             routing_table: RoutingTable::new(id),
             kv_store: HashMap::new(),
             files_store: HashMap::new(),
         }
-    }
-
-    // Get the owner id of this DHT.
-    pub fn id(&self) -> u32 {
-        self.id
     }
 
     // Enable the recent peer cache. On small network, with non uniform id
@@ -94,14 +86,13 @@ impl DistributedHashTable {
     }
 
     // Get the number of known peers.
-    pub async fn known_peers_count(&mut self) -> usize {
-        self.routing_table.get_all_peers().await.count()
+    pub async fn known_peers(&mut self) -> impl Iterator<Item = PeerNode> + '_ {
+        self.routing_table.get_all_peers().await
     }
 
     // Dump this dht into a file.
     pub async fn dump_to_file(&self, path: &Path) -> AnyResult<()> {
         let config = Config {
-            id: self.id,
             peers: self.routing_table.get_all_peers().await.collect(),
             peers_lru: self
                 .routing_table
@@ -126,14 +117,13 @@ impl DistributedHashTable {
         Ok(())
     }
 
-    // Reload the dht from a given file.
+    // Reload the dht from a given file. Return the saved peer id.
     pub async fn load_from_file(&mut self, path: &Path) -> AnyResult<()> {
         let file = OpenOptions::new().read(true).open(&path)?;
         let reader = BufReader::new(file);
         let config: Config = serde_json::from_reader(reader)?;
 
         self.clean().await;
-        self.id = config.id;
         for peer in config.peers.into_iter().chain(config.peers_lru.into_iter()) {
             self.add_peer_node(peer).await;
         }

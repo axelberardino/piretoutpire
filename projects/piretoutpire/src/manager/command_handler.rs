@@ -29,6 +29,7 @@ async fn dispatch(
     incoming_addr: SocketAddr,
     writer: &mut BufWriter<WriteHalf<'_>>,
     request: Command,
+    own_id: u32,
 ) -> AnyResult<()> {
     let ctx = Arc::clone(&main_ctx);
     let (sender, res_command) = match request {
@@ -43,7 +44,7 @@ async fn dispatch(
         ),
         Command::PingRequest(peer_sender) => (
             Some(peer_sender.id),
-            serve_ping(ctx, peer_sender.addr, peer_sender.id).await,
+            serve_ping(ctx, peer_sender.addr, peer_sender.id, own_id).await,
         ),
         Command::StoreRequest(peer_sender, key, message) => (
             None,
@@ -101,7 +102,11 @@ async fn dispatch(
 // Main handler ----------------------------------------------------------------
 
 // Start to listen to command. One instance will be spawn for each peer.
-pub async fn listen_to_command(ctx: Arc<Mutex<Context>>, mut stream: TcpStream) -> AnyResult<()> {
+pub async fn listen_to_command(
+    ctx: Arc<Mutex<Context>>,
+    mut stream: TcpStream,
+    own_id: u32,
+) -> AnyResult<()> {
     let read_timeout = {
         let guard = ctx.lock().await;
         let ctx = guard.deref();
@@ -122,7 +127,7 @@ pub async fn listen_to_command(ctx: Arc<Mutex<Context>>, mut stream: TcpStream) 
         }
 
         match raw_order.as_slice().try_into() {
-            Ok(command) => dispatch(Arc::clone(&ctx), peer_addr, &mut writer, command).await?,
+            Ok(command) => dispatch(Arc::clone(&ctx), peer_addr, &mut writer, command, own_id).await?,
             Err(err) => eprintln!("Unknown command received! {}", err),
         }
     }

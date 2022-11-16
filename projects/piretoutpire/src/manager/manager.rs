@@ -53,6 +53,16 @@ impl Manager {
         }
     }
 
+    // Get the owner id of this DHT.
+    pub fn id(&self) -> u32 {
+        self.id
+    }
+
+    // Get the real address of this peer.
+    pub fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+
     // OPTIONS -----------------------------------------------------------------
 
     // Set the max hop possible when searchin for a node.
@@ -125,10 +135,23 @@ impl Manager {
     }
 
     // Get the number of known peers.
+    pub async fn known_peers(&mut self) -> impl Iterator<Item = PeerNode> {
+        let mut guard = self.ctx.lock().await;
+        let ctx = guard.deref_mut();
+        let peers = ctx
+            .dht
+            .known_peers()
+            .await
+            .map(|peer| peer.clone())
+            .collect::<Vec<_>>();
+        peers.into_iter()
+    }
+
+    // Get the number of known peers.
     pub async fn known_peers_count(&mut self) -> usize {
         let mut guard = self.ctx.lock().await;
         let ctx = guard.deref_mut();
-        ctx.dht.known_peers_count().await
+        ctx.dht.known_peers().await.count()
     }
 
     // LOCAL FILES -------------------------------------------------------------
@@ -181,10 +204,11 @@ impl Manager {
         });
 
         // Accept all incoming connection, and spawn a new thread for each.
+        let own_id = self.id;
         loop {
             let (stream, _) = listener.accept().await?;
             let ctx = Arc::clone(&self.ctx);
-            tokio::spawn(async move { listen_to_command(ctx, stream).await });
+            tokio::spawn(async move { listen_to_command(ctx, stream, own_id).await });
         }
     }
 
@@ -200,7 +224,7 @@ impl Manager {
 
         // As we don't know the id of the peer yet, let's ask him, and put that
         // into our dht.
-        let target = ping(Arc::clone(&self.ctx), peer, self.addr, self.id).await?;
+        let target = ping(Arc::clone(&self.ctx), peer, self.addr, self.id()).await?;
 
         let peer = Peer {
             id: target,
@@ -213,8 +237,8 @@ impl Manager {
             Arc::clone(&self.ctx),
             peer,
             self.addr,
-            self.id,
-            self.id,
+            self.id(),
+            self.id(),
             self.max_hop,
             query_find_node,
         )
@@ -246,7 +270,7 @@ impl Manager {
                     Arc::clone(&self.ctx),
                     peer.into(),
                     self.addr,
-                    self.id,
+                    self.id(),
                     target,
                     self.max_hop,
                     query_find_node,
@@ -285,7 +309,7 @@ impl Manager {
         };
 
         if let Some(peer) = peer {
-            Ok(ping(Arc::clone(&self.ctx), peer.into(), self.addr, self.id)
+            Ok(ping(Arc::clone(&self.ctx), peer.into(), self.addr, self.id())
                 .await
                 .is_err())
         } else {
@@ -310,8 +334,8 @@ impl Manager {
                     Arc::clone(&self.ctx),
                     peer.into(),
                     self.addr,
-                    self.id,
-                    self.id,
+                    self.id(),
+                    self.id(),
                     self.max_hop,
                     query_find_node,
                 )
@@ -441,7 +465,7 @@ impl Manager {
                 Arc::clone(&self.ctx),
                 peer.into(),
                 self.addr,
-                self.id,
+                self.id(),
                 target,
                 self.max_hop,
                 query_find_node,
@@ -456,7 +480,7 @@ impl Manager {
             for close_peer in closest_peers {
                 let stream = Arc::new(Mutex::new(TcpStream::connect(close_peer.addr()).await?));
                 let message =
-                    handle_find_value(Arc::clone(&self.ctx), stream, self.addr, self.id, target).await?;
+                    handle_find_value(Arc::clone(&self.ctx), stream, self.addr, self.id(), target).await?;
                 if message.is_some() {
                     return Ok(message);
                 }
@@ -484,7 +508,7 @@ impl Manager {
                 Arc::clone(&self.ctx),
                 peer.into(),
                 self.addr,
-                self.id,
+                self.id(),
                 target,
                 self.max_hop,
                 query_find_node,
@@ -503,7 +527,7 @@ impl Manager {
                     Arc::clone(&self.ctx),
                     stream,
                     self.addr,
-                    self.id,
+                    self.id(),
                     target,
                     message.clone(),
                 )
@@ -528,7 +552,7 @@ impl Manager {
             ctx.dht.store_file_peer(
                 crc,
                 Peer {
-                    id: self.id,
+                    id: self.id(),
                     addr: self.addr,
                 },
             );
@@ -542,7 +566,7 @@ impl Manager {
                 Arc::clone(&self.ctx),
                 peer.into(),
                 self.addr,
-                self.id,
+                self.id(),
                 crc,
                 self.max_hop,
                 query_find_node,
@@ -558,7 +582,7 @@ impl Manager {
             for close_peer in closest_peers {
                 if let Ok(connection) = TcpStream::connect(close_peer.addr()).await {
                     let stream = Arc::new(Mutex::new(connection));
-                    if handle_announce(Arc::clone(&self.ctx), stream, self.addr, self.id, crc)
+                    if handle_announce(Arc::clone(&self.ctx), stream, self.addr, self.id(), crc)
                         .await
                         .is_ok()
                     {
@@ -591,7 +615,7 @@ impl Manager {
                 Arc::clone(&self.ctx),
                 peer.into(),
                 self.addr,
-                self.id,
+                self.id(),
                 crc,
                 self.max_hop,
                 query_find_node,

@@ -101,7 +101,7 @@ pub enum Command {
     #[clap(arg_required_else_help = true)]
     #[clap(name = "download")]
     DownloadFile {
-        /// Peer id
+        /// File id (crc)
         #[clap(value_parser)]
         file_crc: u32,
     },
@@ -174,6 +174,10 @@ pub enum Command {
         #[clap(value_parser)]
         crc: u32,
     },
+
+    /// List all the known peers
+    #[clap(name = "list")]
+    List,
 }
 
 // Mode ------------------------------------------------------------------------
@@ -186,19 +190,9 @@ fn get_random_id() -> u32 {
 
 #[tokio::main]
 async fn main() -> AnyResult<()> {
-    let mut args = Cli::parse();
+    let args = Cli::parse();
     let peer_id = args.peer_id.unwrap_or_else(|| get_random_id());
     let own_addr: SocketAddr = args.server_addr.parse()?;
-
-    // HACK
-    // file_crc = 3613099103
-    let (own_addr, peer_id) = if args.command == Command::Seed {
-        args.dht_filename = "/tmp/dht_server".to_owned();
-        ("127.0.0.1:4000".parse()?, 0)
-    } else {
-        ("127.0.0.1:4001".parse()?, 1)
-    };
-    // !HACK
 
     let mut manager = Manager::new(
         peer_id,
@@ -225,8 +219,8 @@ async fn main() -> AnyResult<()> {
 
     let info = format!(
         "Peer ID: {}, Peer address: {}, Known peers: {}",
-        peer_id,
-        own_addr,
+        manager.id(),
+        manager.addr(),
         manager.known_peers_count().await
     );
     println!("{}", info.truecolor(135, 138, 139).italic());
@@ -276,6 +270,13 @@ async fn main() -> AnyResult<()> {
         Command::GetPeers { crc } => {
             let peers = manager.get_peers(crc).await?;
             println!("Peers who own this file are: {:?}", peers);
+        }
+        Command::List => {
+            let peers = manager.known_peers().await;
+            println!("Peers list");
+            for peer in peers {
+                println!("  * {} ({})", peer.id(), peer.addr());
+            }
         }
         Command::Leech => {
             let peer_found = manager.bootstrap("127.0.0.1:4000".parse()?).await?;

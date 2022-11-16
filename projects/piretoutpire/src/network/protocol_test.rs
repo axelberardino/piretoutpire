@@ -289,6 +289,49 @@ fn test_find_node_response_protocol() -> AnyResult<()> {
 }
 
 #[test]
+fn test_find_node_list_response_protocol() -> AnyResult<()> {
+    let cmd = Command::FindNodeResponse(vec![
+        Peer {
+            id: 1234,
+            addr: "127.0.0.1:4000".parse()?,
+        },
+        Peer {
+            id: 4567,
+            addr: "127.0.0.1:5000".parse()?,
+        },
+    ]);
+    let raw_buf: Vec<u8> = cmd.into();
+    let raw_buf = raw_buf.as_slice();
+
+    #[rustfmt::skip]
+    assert_eq!(&[
+            10,
+            0, 0, 0, 2,
+                0, 0, 4, 210,
+                0, 0, 0, 14, 49, 50, 55, 46, 48, 46, 48, 46, 49, 58, 52, 48, 48, 48,
+                0, 0, 17, 215,
+                0, 0, 0, 14, 49, 50, 55, 46, 48, 46, 48, 46, 49, 58, 53, 48, 48, 48
+        ],
+        raw_buf
+    );
+
+    match Command::try_from(raw_buf)? {
+        Command::FindNodeResponse(peers) => {
+            assert_eq!(2, peers.len());
+            let peer = &peers[0];
+            assert_eq!(1234, peer.id);
+            assert_eq!("127.0.0.1:4000".parse::<SocketAddr>()?, peer.addr);
+            let peer = &peers[1];
+            assert_eq!(4567, peer.id);
+            assert_eq!("127.0.0.1:5000".parse::<SocketAddr>()?, peer.addr);
+        }
+        _ => panic!(),
+    }
+
+    Ok(())
+}
+
+#[test]
 fn test_store_request_protocol() -> AnyResult<()> {
     let peer = Peer {
         id: 1234,
