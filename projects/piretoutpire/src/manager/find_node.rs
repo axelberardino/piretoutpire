@@ -1,7 +1,7 @@
 use super::{client::handle_find_node, context::Context};
 use crate::{network::protocol::Peer, utils::distance};
 use errors::{AnyError, AnyResult};
-use std::{collections::HashSet, future::Future, ops::DerefMut, sync::Arc, time::Duration};
+use std::{collections::HashSet, future::Future, ops::DerefMut, sync::Arc};
 use tokio::{
     self,
     net::TcpStream,

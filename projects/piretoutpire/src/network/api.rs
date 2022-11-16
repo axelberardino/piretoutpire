@@ -1,7 +1,7 @@
 use super::protocol::Command;
 use crate::manager::context::Context;
 use errors::{bail, AnyResult};
-use std::{ops::Deref, sync::Arc, time::Duration};
+use std::{ops::Deref, sync::Arc};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
