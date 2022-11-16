@@ -1,16 +1,13 @@
 use super::protocol::Command;
+use crate::manager::context::Context;
 use errors::{bail, AnyResult};
-use std::{sync::Arc, time::Duration};
+use std::{ops::Deref, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
     sync::Mutex,
-    time::timeout,
+    time::{sleep, timeout},
 };
-
-pub const READ_TIMEOUT_MS: u64 = 200;
-pub const WRITE_TIMEOUT_MS: u64 = 200;
-pub const CONNECTION_TIMEOUT_MS: u64 = 200;
 
 // UTILS -----------------------------------------------------------------------
 
@@ -23,16 +20,11 @@ pub const CONNECTION_TIMEOUT_MS: u64 = 200;
 // buffer, let's consider we reach the end).
 #[macro_export]
 macro_rules! read_all {
-    ($reader:ident) => {{
+    ($reader:ident, $timeout:ident) => {{
         let mut res_buf: Vec<u8> = Vec::new();
         const BUF_SIZE: usize = 8 * 1024;
         let mut buf: [u8; BUF_SIZE] = [0; BUF_SIZE];
-        while let Ok(bytes) = tokio::time::timeout(
-            std::time::Duration::from_millis(crate::network::api::READ_TIMEOUT_MS),
-            $reader.read(&mut buf[..]),
-        )
-        .await?
-        {
+        while let Ok(bytes) = tokio::time::timeout($timeout, $reader.read(&mut buf[..])).await? {
             if bytes == 0 {
                 break;
             }
@@ -47,16 +39,29 @@ macro_rules! read_all {
 
 // Send a raw request u8 encoded, and wait for a respone.
 // Return a raw buffer which must be interpreted.
-pub async fn send_raw_unary(stream: Arc<Mutex<TcpStream>>, request: &[u8]) -> AnyResult<Vec<u8>> {
+pub async fn send_raw_unary(
+    ctx: Arc<Mutex<Context>>,
+    stream: Arc<Mutex<TcpStream>>,
+    request: &[u8],
+) -> AnyResult<Vec<u8>> {
+    let (slowness, read_timeout, write_timeout) = {
+        let guard = ctx.lock().await;
+        let ctx = guard.deref();
+        (ctx.slowness, ctx.read_timeout, ctx.write_timeout)
+    };
+
     let mut guard = stream.lock().await;
     let (reader, writer) = guard.split();
     let mut reader = tokio::io::BufReader::new(reader);
     let mut writer = tokio::io::BufWriter::new(writer);
 
-    timeout(Duration::from_millis(WRITE_TIMEOUT_MS), writer.write_all(request)).await??;
-    timeout(Duration::from_millis(WRITE_TIMEOUT_MS), writer.flush()).await??;
+    if let Some(wait_time) = slowness {
+        sleep(wait_time).await;
+    }
+    timeout(write_timeout, writer.write_all(request)).await??;
+    timeout(write_timeout, writer.flush()).await??;
 
-    let raw_chunk = read_all!(reader);
+    let raw_chunk = read_all!(reader, read_timeout);
     let len = raw_chunk.len();
     if len == 0 {
         bail!("invalid buffer");
@@ -69,64 +74,104 @@ pub async fn send_raw_unary(stream: Arc<Mutex<TcpStream>>, request: &[u8]) -> An
 // All unary send a request and handle the response in the command handler.
 
 // Ask for a chunk of a given file by its id.
-pub async fn file_chunk(stream: Arc<Mutex<TcpStream>>, crc: u32, chunk_id: u32) -> AnyResult<Command> {
+pub async fn file_chunk(
+    ctx: Arc<Mutex<Context>>,
+    stream: Arc<Mutex<TcpStream>>,
+    crc: u32,
+    chunk_id: u32,
+) -> AnyResult<Command> {
     let request: Vec<u8> = Command::ChunkRequest(crc, chunk_id).into();
-    let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+    let raw_response = send_raw_unary(ctx, stream, request.as_slice()).await?;
     raw_response.as_slice().try_into()
 }
 
 // Ask for a chunk of a given file by its id.
-pub async fn file_info(stream: Arc<Mutex<TcpStream>>, crc: u32) -> AnyResult<Command> {
+pub async fn file_info(
+    ctx: Arc<Mutex<Context>>,
+    stream: Arc<Mutex<TcpStream>>,
+    crc: u32,
+) -> AnyResult<Command> {
     let request: Vec<u8> = Command::FileInfoRequest(crc).into();
-    let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+    let raw_response = send_raw_unary(ctx, stream, request.as_slice()).await?;
     raw_response.as_slice().try_into()
 }
 
 // Search for a given peer.
-pub async fn find_node(stream: Arc<Mutex<TcpStream>>, sender: u32, target: u32) -> AnyResult<Command> {
+pub async fn find_node(
+    ctx: Arc<Mutex<Context>>,
+    stream: Arc<Mutex<TcpStream>>,
+    sender: u32,
+    target: u32,
+) -> AnyResult<Command> {
     let request: Vec<u8> = Command::FindNodeRequest(sender, target).into();
-    let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+    let raw_response = send_raw_unary(ctx, stream, request.as_slice()).await?;
     raw_response.as_slice().try_into()
 }
 
 // Ping a peer, checking if he's alive and get its id.
-pub async fn ping(stream: Arc<Mutex<TcpStream>>, sender: u32) -> AnyResult<Command> {
+pub async fn ping(
+    ctx: Arc<Mutex<Context>>,
+    stream: Arc<Mutex<TcpStream>>,
+    sender: u32,
+) -> AnyResult<Command> {
     let request: Vec<u8> = Command::PingRequest(sender).into();
-    let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+    let raw_response = send_raw_unary(ctx, stream, request.as_slice()).await?;
     raw_response.as_slice().try_into()
 }
 
 // Store a value on a peer.
-pub async fn store(stream: Arc<Mutex<TcpStream>>, key: u32, value: String) -> AnyResult<Command> {
+pub async fn store(
+    ctx: Arc<Mutex<Context>>,
+    stream: Arc<Mutex<TcpStream>>,
+    key: u32,
+    value: String,
+) -> AnyResult<Command> {
     let request: Vec<u8> = Command::StoreRequest(key, value).into();
-    let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+    let raw_response = send_raw_unary(ctx, stream, request.as_slice()).await?;
     raw_response.as_slice().try_into()
 }
 
 // Search a given value on a peer.
-pub async fn find_value(stream: Arc<Mutex<TcpStream>>, key: u32) -> AnyResult<Command> {
+pub async fn find_value(
+    ctx: Arc<Mutex<Context>>,
+    stream: Arc<Mutex<TcpStream>>,
+    key: u32,
+) -> AnyResult<Command> {
     let request: Vec<u8> = Command::FindValueRequest(key).into();
-    let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+    let raw_response = send_raw_unary(ctx, stream, request.as_slice()).await?;
     raw_response.as_slice().try_into()
 }
 
 // Send a message to a peer.
-pub async fn send_message(stream: Arc<Mutex<TcpStream>>, message: String) -> AnyResult<Command> {
+pub async fn send_message(
+    ctx: Arc<Mutex<Context>>,
+    stream: Arc<Mutex<TcpStream>>,
+    message: String,
+) -> AnyResult<Command> {
     let request: Vec<u8> = Command::MessageRequest(message).into();
-    let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+    let raw_response = send_raw_unary(ctx, stream, request.as_slice()).await?;
     raw_response.as_slice().try_into()
 }
 
 // Send to a peer that a given peer own a file (by its crc).
-pub async fn announce(stream: Arc<Mutex<TcpStream>>, sender: u32, crc: u32) -> AnyResult<Command> {
+pub async fn announce(
+    ctx: Arc<Mutex<Context>>,
+    stream: Arc<Mutex<TcpStream>>,
+    sender: u32,
+    crc: u32,
+) -> AnyResult<Command> {
     let request: Vec<u8> = Command::AnnounceRequest(sender, crc).into();
-    let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+    let raw_response = send_raw_unary(ctx, stream, request.as_slice()).await?;
     raw_response.as_slice().try_into()
 }
 
 // Get the list of peers who own a given file (by its crc).
-pub async fn get_peers(stream: Arc<Mutex<TcpStream>>, crc: u32) -> AnyResult<Command> {
+pub async fn get_peers(
+    ctx: Arc<Mutex<Context>>,
+    stream: Arc<Mutex<TcpStream>>,
+    crc: u32,
+) -> AnyResult<Command> {
     let request: Vec<u8> = Command::GetPeersRequest(crc).into();
-    let raw_response = send_raw_unary(stream, request.as_slice()).await?;
+    let raw_response = send_raw_unary(ctx, stream, request.as_slice()).await?;
     raw_response.as_slice().try_into()
 }

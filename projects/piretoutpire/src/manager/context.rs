@@ -4,6 +4,11 @@ use crate::{
 };
 use std::{collections::HashMap, time::Duration};
 
+pub const DEFAULT_READ_TIMEOUT_MS: u64 = 200;
+pub const DEFAULT_WRITE_TIMEOUT_MS: u64 = 200;
+pub const DEFAULT_CONNECTION_TIMEOUT_MS: u64 = 200;
+pub const DEFAULT_DHT_DUMP_FREQUENCY_MS: u64 = 30 * 1000; // 30 sec
+
 // Context handle everything about shared context
 pub struct Context {
     // Contains a trackerless list of local peers
@@ -17,6 +22,18 @@ pub struct Context {
 
     /// Simulate a slowness, for debug purpose.
     pub slowness: Option<Duration>,
+
+    /// Max wait time for initiating a connection.
+    pub connection_timeout: Duration,
+
+    /// Max wait time for sending a query.
+    pub write_timeout: Duration,
+
+    /// Max wait time for receiving a query.
+    pub read_timeout: Duration,
+
+    /// Frequency at which the dht is dump on the disk.
+    pub dht_dump_frequency: Duration,
 }
 
 impl Context {
@@ -27,6 +44,10 @@ impl Context {
             available_torrents: HashMap::new(),
             working_directory,
             slowness: None,
+            connection_timeout: Duration::from_millis(DEFAULT_CONNECTION_TIMEOUT_MS),
+            write_timeout: Duration::from_millis(DEFAULT_WRITE_TIMEOUT_MS),
+            read_timeout: Duration::from_millis(DEFAULT_READ_TIMEOUT_MS),
+            dht_dump_frequency: Duration::from_millis(DEFAULT_DHT_DUMP_FREQUENCY_MS),
         }
     }
 }
@@ -43,6 +64,10 @@ impl Context {
             available_torrents: HashMap::new(),
             working_directory: "".to_owned(),
             slowness: None,
+            connection_timeout: Duration::from_millis(DEFAULT_CONNECTION_TIMEOUT_MS),
+            write_timeout: Duration::from_millis(DEFAULT_WRITE_TIMEOUT_MS),
+            read_timeout: Duration::from_millis(DEFAULT_READ_TIMEOUT_MS),
+            dht_dump_frequency: Duration::from_millis(DEFAULT_DHT_DUMP_FREQUENCY_MS),
         }
     }
 }

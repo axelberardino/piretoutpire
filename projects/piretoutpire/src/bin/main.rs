@@ -30,10 +30,31 @@ struct Cli {
     #[clap(long, value_name = "ms")]
     slowness: Option<u64>,
 
+    /// Max wait time for initiating a connection (default is 200 ms).
+    #[clap(long, value_name = "ms")]
+    connection_timeout: Option<u64>,
+
+    /// Max wait time for sending a query (default is 200 ms).
+    #[clap(long, value_name = "ms")]
+    write_timeout: Option<u64>,
+
+    /// Max wait time for receiving a query (default is 200 ms).
+    #[clap(long, value_name = "ms")]
+    read_timeout: Option<u64>,
+
+    /// Frequency at which the dht is dump into the disk (default is 30 sec).
+    #[clap(long, value_name = "ms")]
+    dht_dump_frequency: Option<u64>,
+
     /// Config file for dht.
     #[clap(default_value_t = String::from("/tmp/dht"))]
     #[clap(long, value_name = "dht-filename")]
     dht_filename: String,
+
+    /// Where the downloaded files and the ones to seed are located.
+    #[clap(default_value_t = String::from("/tmp/"))]
+    #[clap(long, value_name = "working-dir")]
+    working_directory: String,
 
     /// Disable the recent peers cache. On small network, with non uniform id
     /// distribution, caching peers could be hard. The "recent" peers cache is
@@ -182,12 +203,22 @@ async fn main() -> AnyResult<()> {
     let info = format!("Peer ID is: {}, and own server address is {}", peer_id, own_addr);
     println!("{}", info.truecolor(135, 138, 139).italic());
 
-    let mut manager = Manager::new(peer_id, own_addr, "/tmp/leecher".to_owned());
+    let mut manager = Manager::new(
+        peer_id,
+        own_addr,
+        args.dht_filename.clone(),
+        args.working_directory,
+    );
     manager.set_max_hop(args.max_hop);
     manager
         .set_recent_peers_cache_enable(!args.disable_recent_peers_cache)
         .await;
     manager.set_slowness(args.slowness).await;
+    manager.set_connection_timeout(args.connection_timeout).await;
+    manager.set_write_timeout(args.write_timeout).await;
+    manager.set_read_timeout(args.read_timeout).await;
+    manager.set_dht_dump_frequency(args.dht_dump_frequency).await;
+
     if manager.load_dht(Path::new(&args.dht_filename)).await.is_err() {
         println!(
             "No dht file yet at {}, a new one will be created...",
@@ -202,7 +233,7 @@ async fn main() -> AnyResult<()> {
         }
         Command::Bootstrap { peer_addr } => {
             let peer_found = manager.bootstrap(peer_addr.parse()?).await?;
-            manager.dump_dht(Path::new(&args.dht_filename)).await?;
+            manager.dump_dht().await?;
             println!("Bootstrap done, find node: {:?}", peer_found);
         }
         Command::Ping { target } => {
@@ -243,7 +274,7 @@ async fn main() -> AnyResult<()> {
         }
         Command::Leech => {
             manager.bootstrap("127.0.0.1:4000".parse()?).await?;
-            manager.dump_dht(Path::new(&args.dht_filename)).await?;
+            manager.dump_dht().await?;
             let succeed = manager.send_message(0, "hello dear server".to_owned()).await?;
             println!("Message sent: {}", succeed);
 

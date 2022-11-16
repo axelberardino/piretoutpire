@@ -4,7 +4,10 @@ use super::{
         handle_message, handle_ping, handle_store,
     },
     command_handler::listen_to_command,
-    context::Context,
+    context::{
+        Context, DEFAULT_CONNECTION_TIMEOUT_MS, DEFAULT_DHT_DUMP_FREQUENCY_MS, DEFAULT_READ_TIMEOUT_MS,
+        DEFAULT_WRITE_TIMEOUT_MS,
+    },
     find_node::{find_closest_node, query_find_node},
 };
 use crate::{
@@ -33,18 +36,20 @@ pub struct Manager {
     addr: SocketAddr,
     ctx: Arc<Mutex<Context>>,
     max_hop: Option<u32>,
+    dht_config_filename: String,
 }
 
 impl Manager {
     // CONSTRUCTOR -------------------------------------------------------------
 
-    // Expect an address like: "127.0.0.1:8080".parse()
-    pub fn new(id: u32, addr: SocketAddr, working_directory: String) -> Self {
+    // Create a new manager. Expect an address like: "127.0.0.1:8080".parse()
+    pub fn new(id: u32, addr: SocketAddr, dht_config_filename: String, working_directory: String) -> Self {
         Self {
             id,
             addr,
             ctx: Arc::new(Mutex::new(Context::new(working_directory, id))),
             max_hop: None,
+            dht_config_filename,
         }
     }
 
@@ -75,13 +80,39 @@ impl Manager {
         ctx.slowness = value.map(|val| Duration::from_millis(val));
     }
 
+    /// Max wait time for initiating a connection (default is 200 ms).
+    pub async fn set_connection_timeout(&mut self, value: Option<u64>) {
+        let mut guard = self.ctx.lock().await;
+        let ctx = guard.deref_mut();
+        ctx.connection_timeout = Duration::from_millis(value.unwrap_or(DEFAULT_CONNECTION_TIMEOUT_MS));
+    }
+
+    /// Max wait time for sending a query (default is 200 ms).
+    pub async fn set_write_timeout(&mut self, value: Option<u64>) {
+        let mut guard = self.ctx.lock().await;
+        let ctx = guard.deref_mut();
+        ctx.write_timeout = Duration::from_millis(value.unwrap_or(DEFAULT_WRITE_TIMEOUT_MS));
+    }
+
+    /// Max wait time for receiving a query (default is 200 ms).
+    pub async fn set_read_timeout(&mut self, value: Option<u64>) {
+        let mut guard = self.ctx.lock().await;
+        let ctx = guard.deref_mut();
+        ctx.read_timeout = Duration::from_millis(value.unwrap_or(DEFAULT_READ_TIMEOUT_MS));
+    }
+
+    /// Frequency at which the dht is dump into the disk.
+    pub async fn set_dht_dump_frequency(&mut self, value: Option<u64>) {
+        let mut guard = self.ctx.lock().await;
+        let ctx = guard.deref_mut();
+        ctx.dht_dump_frequency = Duration::from_millis(value.unwrap_or(DEFAULT_DHT_DUMP_FREQUENCY_MS));
+    }
+
     // CONFIG ------------------------------------------------------------------
 
     // Dump the dht into a file.
-    pub async fn dump_dht(&self, path: &Path) -> AnyResult<()> {
-        let guard = self.ctx.lock().await;
-        let ctx = guard.deref();
-        ctx.dht.dump_to_file(path).await?;
+    pub async fn dump_dht(&self) -> AnyResult<()> {
+        dump_dht(Arc::clone(&self.ctx), &self.dht_config_filename).await?;
         Ok(())
     }
 
@@ -95,7 +126,7 @@ impl Manager {
 
     // LOCAL FILES -------------------------------------------------------------
 
-    // FIXME
+    // FIXME load dir
     // Load all files in a given directory to be shared on the peer network.
     // pub async fn load_directory<P: AsRef<Path>>(&mut self, dir: P) -> AnyResult<()> {}
 
@@ -118,10 +149,27 @@ impl Manager {
 
     // Start the backend server to listen to command and seed.
     pub async fn start_server(&self) -> AnyResult<()> {
+        let dht_dump_frequency = {
+            let guard = self.ctx.lock().await;
+            let ctx = guard.deref();
+            ctx.dht_dump_frequency
+        };
+
         let listener = TcpListener::bind(self.addr).await?;
 
-        // FIXME start cleaning function here.
+        // Let's write the peers list regularly on the disk.
+        let dht_config_filename = self.dht_config_filename.clone();
+        let ctx = Arc::clone(&self.ctx);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(dht_dump_frequency);
+            loop {
+                interval.tick().await;
+                let _ = dump_dht(Arc::clone(&ctx), &dht_config_filename).await;
+                println!("dht dumped!");
+            }
+        });
 
+        // Accept all incoming connection, and spawn a new thread for each.
         loop {
             let (stream, _) = listener.accept().await?;
             let ctx = Arc::clone(&self.ctx);
@@ -224,12 +272,7 @@ impl Manager {
         };
 
         if let Some(peer) = peer {
-            if ping(Arc::clone(&self.ctx), peer.into(), self.id).await.is_err() {
-                // mark
-                Ok(false)
-            } else {
-                Ok(true)
-            }
+            Ok(ping(Arc::clone(&self.ctx), peer.into(), self.id).await.is_err())
         } else {
             Ok(false)
         }
@@ -265,7 +308,7 @@ impl Manager {
         };
 
         let stream = Arc::new(Mutex::new(TcpStream::connect(peer.addr()).await?));
-        handle_message(stream, message).await?;
+        handle_message(Arc::clone(&self.ctx), stream, message).await?;
         Ok(true)
     }
 
@@ -289,7 +332,7 @@ impl Manager {
     // Start downloading a file, or resume downloading
     pub async fn download_file(&mut self, crc: u32) -> AnyResult<()> {
         let ctx = Arc::clone(&self.ctx);
-        // FIXME ask for peers.
+        // FIXME ask for peers for download
 
         // Get some info about what to download
         let nb_chunks = {
@@ -304,7 +347,7 @@ impl Manager {
             chunks.nb_chunks()
         };
 
-        // FIXME chunk_download abort too soon, handle that better
+        // FIXME downloaded chunk abort too soon, handle that better
         {
             let client_addr: SocketAddr = "127.0.0.1:4000".parse()?;
             let stream = Arc::new(Mutex::new(TcpStream::connect(client_addr).await?));
@@ -360,7 +403,7 @@ impl Manager {
             };
             for close_peer in closest_peers {
                 let stream = Arc::new(Mutex::new(TcpStream::connect(close_peer.addr()).await?));
-                let message = handle_find_value(stream, target).await?;
+                let message = handle_find_value(Arc::clone(&self.ctx), stream, target).await?;
                 if message.is_some() {
                     return Ok(message);
                 }
@@ -402,7 +445,10 @@ impl Manager {
             let mut nb_store = 0;
             for close_peer in closest_peers {
                 let stream = Arc::new(Mutex::new(TcpStream::connect(close_peer.addr()).await?));
-                if handle_store(stream, target, message.clone()).await.is_ok() {
+                if handle_store(Arc::clone(&self.ctx), stream, target, message.clone())
+                    .await
+                    .is_ok()
+                {
                     nb_store += 1;
                 }
             }
@@ -494,7 +540,7 @@ impl Manager {
             };
             for close_peer in closest_peers {
                 let stream = Arc::new(Mutex::new(TcpStream::connect(close_peer.addr()).await?));
-                let message = handle_get_peers(stream, crc).await?;
+                let message = handle_get_peers(Arc::clone(&self.ctx), stream, crc).await?;
                 if message.is_some() {
                     return Ok(message);
                 }
@@ -520,4 +566,12 @@ async fn ping(ctx: Arc<Mutex<Context>>, peer: Peer, sender: u32) -> AnyResult<u3
     }
 
     Ok(target)
+}
+
+// Dump the dht into a file.
+async fn dump_dht(ctx: Arc<Mutex<Context>>, dht_config_filename: &String) -> AnyResult<()> {
+    let guard = ctx.lock().await;
+    let ctx = guard.deref();
+    ctx.dht.dump_to_file(Path::new(dht_config_filename)).await?;
+    Ok(())
 }

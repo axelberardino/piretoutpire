@@ -36,7 +36,7 @@ pub async fn handle_file_info(
     stream: Arc<Mutex<TcpStream>>,
     crc: u32,
 ) -> AnyResult<Option<FileInfo>> {
-    let command = file_info(Arc::clone(&stream), crc).await?;
+    let command = file_info(Arc::clone(&ctx), Arc::clone(&stream), crc).await?;
 
     match command {
         Command::FileInfoResponse(file_info) => {
@@ -84,7 +84,7 @@ pub async fn handle_file_chunk(
     crc: u32,
     chunk_id: u32,
 ) -> AnyResult<()> {
-    let command = file_chunk(Arc::clone(&stream), crc, chunk_id).await?;
+    let command = file_chunk(Arc::clone(&ctx), Arc::clone(&stream), crc, chunk_id).await?;
 
     match command {
         Command::ChunkResponse(crc, chunk_id, raw_chunk) => {
@@ -122,7 +122,7 @@ pub async fn handle_find_node(
     target: u32,
 ) -> AnyResult<Vec<Peer>> {
     peer_was_requested(Arc::clone(&ctx), sender).await;
-    let command = find_node(Arc::clone(&stream), sender, target).await?;
+    let command = find_node(Arc::clone(&ctx), Arc::clone(&stream), sender, target).await?;
     peer_has_responded(Arc::clone(&ctx), sender).await;
 
     match command {
@@ -142,7 +142,7 @@ pub async fn handle_ping(
     sender: u32,
 ) -> AnyResult<u32> {
     peer_was_requested(Arc::clone(&ctx), sender).await;
-    let command = ping(Arc::clone(&stream), sender).await?;
+    let command = ping(Arc::clone(&ctx), Arc::clone(&stream), sender).await?;
     peer_has_responded(Arc::clone(&ctx), sender).await;
 
     match command {
@@ -153,8 +153,13 @@ pub async fn handle_ping(
 }
 
 // Ask a peer to store a value ina given key.
-pub async fn handle_store(stream: Arc<Mutex<TcpStream>>, key: u32, value: String) -> AnyResult<()> {
-    let command = store(Arc::clone(&stream), key, value).await?;
+pub async fn handle_store(
+    ctx: Arc<Mutex<Context>>,
+    stream: Arc<Mutex<TcpStream>>,
+    key: u32,
+    value: String,
+) -> AnyResult<()> {
+    let command = store(Arc::clone(&ctx), Arc::clone(&stream), key, value).await?;
 
     match command {
         Command::StoreResponse() => Ok(()),
@@ -164,8 +169,12 @@ pub async fn handle_store(stream: Arc<Mutex<TcpStream>>, key: u32, value: String
 }
 
 // Ask a peer for a store value in its kv_store, for a given key.
-pub async fn handle_find_value(stream: Arc<Mutex<TcpStream>>, key: u32) -> AnyResult<Option<String>> {
-    let command = find_value(Arc::clone(&stream), key).await?;
+pub async fn handle_find_value(
+    ctx: Arc<Mutex<Context>>,
+    stream: Arc<Mutex<TcpStream>>,
+    key: u32,
+) -> AnyResult<Option<String>> {
+    let command = find_value(Arc::clone(&ctx), Arc::clone(&stream), key).await?;
 
     match command {
         Command::FindValueResponse(message) => {
@@ -179,8 +188,12 @@ pub async fn handle_find_value(stream: Arc<Mutex<TcpStream>>, key: u32) -> AnyRe
 }
 
 // Send a message to a peer.
-pub async fn handle_message(stream: Arc<Mutex<TcpStream>>, message: String) -> AnyResult<()> {
-    let command = send_message(Arc::clone(&stream), message).await?;
+pub async fn handle_message(
+    ctx: Arc<Mutex<Context>>,
+    stream: Arc<Mutex<TcpStream>>,
+    message: String,
+) -> AnyResult<()> {
+    let command = send_message(Arc::clone(&ctx), Arc::clone(&stream), message).await?;
 
     match command {
         Command::MessageResponse() => Ok(()),
@@ -197,7 +210,7 @@ pub async fn handle_announce(
     crc: u32,
 ) -> AnyResult<()> {
     peer_was_requested(Arc::clone(&ctx), sender).await;
-    let command = announce(Arc::clone(&stream), sender, crc).await?;
+    let command = announce(Arc::clone(&ctx), Arc::clone(&stream), sender, crc).await?;
     peer_was_requested(Arc::clone(&ctx), sender).await;
 
     match command {
@@ -208,8 +221,12 @@ pub async fn handle_announce(
 }
 
 // Get the list of peers who own a given file (by its crc).
-pub async fn handle_get_peers(stream: Arc<Mutex<TcpStream>>, crc: u32) -> AnyResult<Option<Vec<Peer>>> {
-    let command = get_peers(Arc::clone(&stream), crc).await?;
+pub async fn handle_get_peers(
+    ctx: Arc<Mutex<Context>>,
+    stream: Arc<Mutex<TcpStream>>,
+    crc: u32,
+) -> AnyResult<Option<Vec<Peer>>> {
+    let command = get_peers(Arc::clone(&ctx), Arc::clone(&stream), crc).await?;
 
     match command {
         Command::GetPeersResponse(found_peers) => Ok(Some(found_peers)),
