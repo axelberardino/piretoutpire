@@ -28,9 +28,7 @@ async fn peer_has_responded(ctx: Arc<Mutex<Context>>, target: u32) {
 
 // Client API ------------------------------------------------------------------
 
-// Get file info from its ID (crc).
-// Start by sending a Handshake request, and received either an error code
-// or a FileInfo response.
+// Get file info from its ID (crc), then put it into our local store.
 pub async fn handle_file_info(
     ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
@@ -83,7 +81,7 @@ pub async fn handle_file_chunk(
     stream: Arc<Mutex<TcpStream>>,
     crc: u32,
     chunk_id: u32,
-) -> AnyResult<()> {
+) -> AnyResult<bool> {
     let command = file_chunk(Arc::clone(&ctx), Arc::clone(&stream), crc, chunk_id).await?;
 
     match command {
@@ -106,12 +104,12 @@ pub async fn handle_file_chunk(
                 }
                 None => eprintln!("Got chunk for an unknown file"),
             }
+            Ok(true)
         }
-        Command::ErrorOccured(error) => eprintln!("peer return error: {}", error),
+        Command::ErrorOccured(error) if error == ErrorCode::ChunkNotFound => Ok(false),
+        Command::ErrorOccured(error) if error == ErrorCode::FileNotFound => Ok(false),
         _ => bail!("Wrong command received: {:?}", command),
     }
-
-    Ok(())
 }
 
 // Ask for a node in the DHT.
@@ -153,10 +151,11 @@ pub async fn handle_ping(
 pub async fn handle_store(
     ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
+    sender: u32,
     key: u32,
     value: String,
 ) -> AnyResult<()> {
-    let command = store(Arc::clone(&ctx), Arc::clone(&stream), key, value).await?;
+    let command = store(Arc::clone(&ctx), Arc::clone(&stream), sender, key, value).await?;
 
     match command {
         Command::StoreResponse() => Ok(()),
@@ -169,9 +168,10 @@ pub async fn handle_store(
 pub async fn handle_find_value(
     ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
+    sender: u32,
     key: u32,
 ) -> AnyResult<Option<String>> {
-    let command = find_value(Arc::clone(&ctx), Arc::clone(&stream), key).await?;
+    let command = find_value(Arc::clone(&ctx), Arc::clone(&stream), sender, key).await?;
 
     match command {
         Command::FindValueResponse(message) => {

@@ -1,8 +1,8 @@
 use crate::{
     dht::peer_node::PeerNode,
     utils::{
-        addr_to_u8_array, string_to_u8_array, u32_to_u8_array, u8_array_to_addr, u8_array_to_string,
-        u8_array_to_u32,
+        addr_to_u8_array, div_ceil, string_to_u8_array, u32_to_u8_array, u8_array_to_addr,
+        u8_array_to_string, u8_array_to_u32,
     },
 };
 use errors::{bail, AnyError};
@@ -12,45 +12,52 @@ use std::{fmt::Display, net::SocketAddr};
 // Protocol constants ----------------------------------------------------------
 
 const ORDER_SIZE: usize = 1; // u8
+const INT_SIZE: usize = 4; // 4 u8
 const PEER_SIZE: usize = 4 + 4; // id(4) + str(4+)
-const FILEINFO_REQUEST_SIZE: usize = 4; // u32
-const CHUNK_REQUEST_SIZE: usize = 4 + 4; // 2*u32
-const CHUNK_RESPONSE_SIZE: usize = 4 + 4; // 2*u32 + chunk(0+)
-const FILEINFO_RESPONSE_SIZE: usize = 4 + 4 + 4 + 4; // 3*u32 + str(4+)
-const FIND_NODE_REQUEST_SIZE: usize = 4 + 4;
-const FIND_NODE_RESPONSE_SIZE: usize = 1; // list(1+)
-const PING_REQUEST_SIZE: usize = 4; // u32
-const PING_RESPONSE_SIZE: usize = 4; // u32
-const STORE_REQUEST_SIZE: usize = 4 + 1; // u32 + str(0+)
-const STORE_RESPONSE_SIZE: usize = 0; // just an acknowledge
-const FIND_VALUE_REQUEST_SIZE: usize = 4; // u32
-const FIND_VALUE_RESPONSE_SIZE: usize = 1; // str(0+)
-const MESSAGE_REQUEST_SIZE: usize = 1; // u32 + str(0+)
-const MESSAGE_RESPONSE_SIZE: usize = 0; // just an acknowledge
-const ANNOUNCE_REQUEST_SIZE: usize = 4 + 4; // 2*u32
-const ANNOUNCE_RESPONSE_SIZE: usize = 0; // just an acknowledge
-const GET_PEERS_REQUEST_SIZE: usize = 4; // u32
-const GET_PEERS_RESPONSE_SIZE: usize = 1; // list(1+)
+const STR_SIZE: usize = 4; // at least 4 bytes for the strlen
+const LIST_SIZE: usize = 4; // at least 4 bytes for a list length
+const BUFFER_SIZE: usize = 0; // at least 0 bytes for the buffer
+const ACK_SIZE: usize = 0; // acknowledge is empty
+const FILE_INFO_SIZE: usize = 4 + 4 + 4 + STR_SIZE; // 3*u32 + str(4+)
+
+const FILEINFO_REQUEST_SIZE: usize = INT_SIZE;
+const FILEINFO_RESPONSE_SIZE: usize = FILE_INFO_SIZE;
+const CHUNK_REQUEST_SIZE: usize = INT_SIZE + INT_SIZE;
+const CHUNK_RESPONSE_SIZE: usize = INT_SIZE + INT_SIZE + BUFFER_SIZE;
+const ANNOUNCE_REQUEST_SIZE: usize = PEER_SIZE + INT_SIZE;
+const ANNOUNCE_RESPONSE_SIZE: usize = ACK_SIZE;
+const GET_PEERS_REQUEST_SIZE: usize = INT_SIZE;
+const GET_PEERS_RESPONSE_SIZE: usize = LIST_SIZE;
+const PING_REQUEST_SIZE: usize = PEER_SIZE;
+const PING_RESPONSE_SIZE: usize = INT_SIZE;
+const FIND_NODE_REQUEST_SIZE: usize = PEER_SIZE + INT_SIZE;
+const FIND_NODE_RESPONSE_SIZE: usize = LIST_SIZE;
+const STORE_REQUEST_SIZE: usize = PEER_SIZE + INT_SIZE + STR_SIZE;
+const STORE_RESPONSE_SIZE: usize = ACK_SIZE;
+const FIND_VALUE_REQUEST_SIZE: usize = PEER_SIZE + INT_SIZE;
+const FIND_VALUE_RESPONSE_SIZE: usize = STR_SIZE;
+const MESSAGE_REQUEST_SIZE: usize = STR_SIZE;
+const MESSAGE_RESPONSE_SIZE: usize = ACK_SIZE;
 
 const MIN_PEER_SIZE: usize = ORDER_SIZE + PEER_SIZE;
 const MIN_FILEINFO_REQUEST_SIZE: usize = ORDER_SIZE + FILEINFO_REQUEST_SIZE;
+const MIN_FILEINFO_RESPONSE_SIZE: usize = ORDER_SIZE + FILEINFO_RESPONSE_SIZE;
 const MIN_CHUNK_REQUEST_SIZE: usize = ORDER_SIZE + CHUNK_REQUEST_SIZE;
 const MIN_CHUNK_RESPONSE_SIZE: usize = ORDER_SIZE + CHUNK_RESPONSE_SIZE;
-const MIN_FILEINFO_RESPONSE_SIZE: usize = ORDER_SIZE + FILEINFO_RESPONSE_SIZE;
-const MIN_FIND_NODE_REQUEST_SIZE: usize = ORDER_SIZE + FIND_NODE_REQUEST_SIZE;
-const MIN_FIND_NODE_RESPONSE_SIZE: usize = ORDER_SIZE + FIND_NODE_RESPONSE_SIZE;
+const MIN_ANNOUNCE_REQUEST_SIZE: usize = ORDER_SIZE + ANNOUNCE_REQUEST_SIZE;
+const MIN_ANNOUNCE_RESPONSE_SIZE: usize = ORDER_SIZE + ANNOUNCE_RESPONSE_SIZE;
+const MIN_GET_PEERS_REQUEST_SIZE: usize = ORDER_SIZE + GET_PEERS_REQUEST_SIZE;
+const MIN_GET_PEERS_RESPONSE_SIZE: usize = ORDER_SIZE + GET_PEERS_RESPONSE_SIZE;
 const MIN_PING_REQUEST_SIZE: usize = ORDER_SIZE + PING_REQUEST_SIZE;
 const MIN_PING_RESPONSE_SIZE: usize = ORDER_SIZE + PING_RESPONSE_SIZE;
+const MIN_FIND_NODE_REQUEST_SIZE: usize = ORDER_SIZE + FIND_NODE_REQUEST_SIZE;
+const MIN_FIND_NODE_RESPONSE_SIZE: usize = ORDER_SIZE + FIND_NODE_RESPONSE_SIZE;
 const MIN_STORE_REQUEST_SIZE: usize = ORDER_SIZE + STORE_REQUEST_SIZE;
 const MIN_STORE_RESPONSE_SIZE: usize = ORDER_SIZE + STORE_RESPONSE_SIZE;
 const MIN_FIND_VALUE_REQUEST_SIZE: usize = ORDER_SIZE + FIND_VALUE_REQUEST_SIZE;
 const MIN_FIND_VALUE_RESPONSE_SIZE: usize = ORDER_SIZE + FIND_VALUE_RESPONSE_SIZE;
 const MIN_MESSAGE_REQUEST_SIZE: usize = ORDER_SIZE + MESSAGE_REQUEST_SIZE;
 const MIN_MESSAGE_RESPONSE_SIZE: usize = ORDER_SIZE + MESSAGE_RESPONSE_SIZE;
-const MIN_ANNOUNCE_REQUEST_SIZE: usize = ORDER_SIZE + ANNOUNCE_REQUEST_SIZE;
-const MIN_ANNOUNCE_RESPONSE_SIZE: usize = ORDER_SIZE + ANNOUNCE_RESPONSE_SIZE;
-const MIN_GET_PEERS_REQUEST_SIZE: usize = ORDER_SIZE + GET_PEERS_REQUEST_SIZE;
-const MIN_GET_PEERS_RESPONSE_SIZE: usize = ORDER_SIZE + GET_PEERS_RESPONSE_SIZE;
 
 // File protocol.
 const FILEINFO_REQUEST: u8 = 0x1;
@@ -90,19 +97,19 @@ pub enum Command {
     FileInfoResponse(FileInfo),
     ChunkRequest(u32 /*crc*/, u32 /*chunk_id*/),
     ChunkResponse(u32 /*crc*/, u32 /*chunk_id*/, Vec<u8> /*chunk*/),
-    AnnounceRequest(u32 /*sender*/, u32 /*crc*/),
+    AnnounceRequest(Peer /*sender*/, u32 /*crc*/),
     AnnounceResponse(),
     GetPeersRequest(u32 /*crc*/),
     GetPeersResponse(Vec<Peer> /*peers_found*/),
 
     // DHT protocol
-    PingRequest(u32 /*sender*/),
+    PingRequest(Peer /*sender*/),
     PingResponse(u32 /*target*/),
-    FindNodeRequest(u32 /*sender*/, u32 /*target*/),
+    FindNodeRequest(Peer /*sender*/, u32 /*target*/),
     FindNodeResponse(Vec<Peer> /*peers_found*/),
-    StoreRequest(u32 /*key*/, String /*message*/),
+    StoreRequest(Peer /*sender*/, u32 /*key*/, String /*message*/),
     StoreResponse(),
-    FindValueRequest(u32 /*key*/),
+    FindValueRequest(Peer /*sender*/, u32 /*key*/),
     FindValueResponse(String /*message*/),
 
     // Message protocol
@@ -184,9 +191,13 @@ impl TryFrom<&[u8]> for Command {
                             MIN_ANNOUNCE_REQUEST_SIZE
                         );
                     }
-                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
-                    let sender = u8_array_to_u32(&slice);
-                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE + 4]);
+
+                    let raw = &value[ORDER_SIZE..];
+                    let sender = Peer::try_from(raw)?;
+                    let shift = sender.addr.to_string().len();
+
+                    let slice: [u8; 4] =
+                        core::array::from_fn(|idx| value[idx + ORDER_SIZE + PEER_SIZE + shift]);
                     let crc = u8_array_to_u32(&slice);
                     Self::AnnounceRequest(sender, crc)
                 }
@@ -224,16 +235,16 @@ impl TryFrom<&[u8]> for Command {
                     let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
                     let list_size = u8_array_to_u32(&slice) as usize;
                     let res = (0..list_size).try_fold(
-                        (Vec::<Peer>::new(), ORDER_SIZE + 4),
+                        (Vec::<Peer>::new(), ORDER_SIZE + INT_SIZE),
                         |(mut acc, shift), _| {
                             let raw = &value[shift..];
                             // size of addr is after id (in pos 4).
-                            let slice: [u8; 4] = core::array::from_fn(|idx| value[shift + idx + 4]);
+                            let slice: [u8; 4] = core::array::from_fn(|idx| value[shift + idx + INT_SIZE]);
                             let addr_size = u8_array_to_u32(&slice) as usize;
 
                             let peer = Peer::try_from(raw)?;
                             acc.push(peer);
-                            Ok::<(Vec<Peer>, usize), AnyError>((acc, shift + addr_size + 4))
+                            Ok::<(Vec<Peer>, usize), AnyError>((acc, shift + PEER_SIZE + addr_size))
                         },
                     )?;
                     let (peers_list, _) = res;
@@ -248,9 +259,12 @@ impl TryFrom<&[u8]> for Command {
                         );
                     }
 
-                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
-                    let sender = u8_array_to_u32(&slice);
-                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE + 4]);
+                    let raw = &value[ORDER_SIZE..];
+                    let sender = Peer::try_from(raw)?;
+                    let shift = sender.addr.to_string().len();
+
+                    let slice: [u8; 4] =
+                        core::array::from_fn(|idx| value[idx + ORDER_SIZE + PEER_SIZE + shift]);
                     let target = u8_array_to_u32(&slice);
                     Self::FindNodeRequest(sender, target)
                 }
@@ -289,8 +303,8 @@ impl TryFrom<&[u8]> for Command {
                             MIN_PING_REQUEST_SIZE
                         );
                     }
-                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
-                    let sender = u8_array_to_u32(&slice);
+                    let raw = &value[ORDER_SIZE..];
+                    let sender = Peer::try_from(raw)?;
                     Self::PingRequest(sender)
                 }
                 PING_RESPONSE => {
@@ -313,15 +327,20 @@ impl TryFrom<&[u8]> for Command {
                             MIN_STORE_REQUEST_SIZE
                         );
                     }
-                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
+                    let raw = &value[ORDER_SIZE..];
+                    let sender = Peer::try_from(raw)?;
+                    let shift = sender.addr.to_string().len();
+
+                    let slice: [u8; 4] =
+                        core::array::from_fn(|idx| value[idx + ORDER_SIZE + PEER_SIZE + shift]);
                     let crc = u8_array_to_u32(&slice);
                     let raw_str = value
                         .iter()
-                        .skip(4 + ORDER_SIZE)
+                        .skip(INT_SIZE + ORDER_SIZE + PEER_SIZE + shift)
                         .map(|ch| *ch)
                         .collect::<Vec<u8>>();
                     let message = u8_array_to_string(raw_str.as_slice())?;
-                    Self::StoreRequest(crc, message)
+                    Self::StoreRequest(sender, crc, message)
                 }
                 STORE_RESPONSE => {
                     if value.len() < MIN_STORE_RESPONSE_SIZE {
@@ -341,9 +360,15 @@ impl TryFrom<&[u8]> for Command {
                             MIN_FIND_VALUE_REQUEST_SIZE
                         );
                     }
-                    let slice: [u8; 4] = core::array::from_fn(|idx| value[idx + ORDER_SIZE]);
+
+                    let raw = &value[ORDER_SIZE..];
+                    let sender = Peer::try_from(raw)?;
+                    let shift = sender.addr.to_string().len();
+
+                    let slice: [u8; 4] =
+                        core::array::from_fn(|idx| value[idx + ORDER_SIZE + PEER_SIZE + shift]);
                     let key = u8_array_to_u32(&slice);
-                    Self::FindValueRequest(key)
+                    Self::FindValueRequest(sender, key)
                 }
                 FIND_VALUE_RESPONSE => {
                     if value.len() < MIN_FIND_VALUE_RESPONSE_SIZE {
@@ -421,7 +446,7 @@ impl From<Command> for Vec<u8> {
             }
             Command::AnnounceRequest(sender, crc) => {
                 let mut res = vec![ANNOUNCE_REQUEST];
-                res.extend(u32_to_u8_array(sender));
+                res.extend(Vec::<u8>::from(sender));
                 res.extend(u32_to_u8_array(crc));
                 res
             }
@@ -444,7 +469,7 @@ impl From<Command> for Vec<u8> {
             }
             Command::FindNodeRequest(sender, target) => {
                 let mut res = vec![FIND_NODE_REQUEST];
-                res.extend(u32_to_u8_array(sender));
+                res.extend(Vec::<u8>::from(sender));
                 res.extend(u32_to_u8_array(target));
                 res
             }
@@ -457,9 +482,9 @@ impl From<Command> for Vec<u8> {
                     acc
                 })
             }
-            Command::PingRequest(crc) => {
+            Command::PingRequest(sender) => {
                 let mut res = vec![PING_REQUEST];
-                res.extend(u32_to_u8_array(crc));
+                res.extend(Vec::<u8>::from(sender));
                 res
             }
             Command::PingResponse(crc) => {
@@ -467,8 +492,9 @@ impl From<Command> for Vec<u8> {
                 res.extend(u32_to_u8_array(crc));
                 res
             }
-            Command::StoreRequest(key, message) => {
+            Command::StoreRequest(sender, key, message) => {
                 let mut res = vec![STORE_REQUEST];
+                res.extend(Vec::<u8>::from(sender));
                 res.extend(u32_to_u8_array(key));
                 res.extend(string_to_u8_array(message));
                 res
@@ -476,8 +502,9 @@ impl From<Command> for Vec<u8> {
             Command::StoreResponse() => {
                 vec![STORE_RESPONSE]
             }
-            Command::FindValueRequest(key) => {
+            Command::FindValueRequest(sender, key) => {
                 let mut res = vec![FIND_VALUE_REQUEST];
+                res.extend(Vec::<u8>::from(sender));
                 res.extend(u32_to_u8_array(key));
                 res
             }
@@ -510,6 +537,12 @@ pub struct FileInfo {
     pub chunk_size: u32,
     pub file_crc: u32,
     pub original_filename: String,
+}
+
+impl FileInfo {
+    pub fn nb_chunks(&self) -> u32 {
+        div_ceil(self.file_size, self.chunk_size)
+    }
 }
 
 // Convert a raw buffer into a command.

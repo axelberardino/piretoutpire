@@ -94,7 +94,7 @@ pub fn u8_array_to_string(array: &[u8]) -> AnyResult<String> {
     }
     let slice: [u8; 4] = core::array::from_fn(|idx| array[idx]);
     let size = u8_array_to_u32(&slice);
-    if (size as usize) != array.len() - 4 {
+    if (size as usize) > array.len() - 4 {
         bail!("invalid size expected {} but got {}", size, array.len())
     }
     let raw_str = array

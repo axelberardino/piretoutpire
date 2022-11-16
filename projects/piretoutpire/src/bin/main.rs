@@ -285,7 +285,8 @@ async fn main() -> AnyResult<()> {
             let succeed = manager.send_message(0, "hello dear server".to_owned()).await?;
             println!("Message sent: {}", succeed);
 
-            manager.download_file(3613099103).await?;
+            let res = manager.download_file(2021542958).await?;
+            println!("download: {:?}", res);
         }
     }
 

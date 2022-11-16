@@ -22,9 +22,9 @@ macro_rules! log {
 }
 
 // Give the file metadata information given its id/crc.
-pub async fn serve_file_info(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, crc: u32) -> Command {
+pub async fn serve_file_info(ctx: Arc<Mutex<Context>>, incoming_addr: SocketAddr, crc: u32) -> Command {
     let header = "[FILE_INFO]".to_owned().blue().on_truecolor(35, 38, 39).bold();
-    let prefix = format!(" received crc {} from {}", crc, sender_addr,);
+    let prefix = format!(" asked crc {} from {}", crc, incoming_addr,);
 
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();
@@ -50,12 +50,12 @@ pub async fn serve_file_info(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, 
 // Serve chunk asked by a client.
 pub async fn serve_file_chunk(
     ctx: Arc<Mutex<Context>>,
-    sender_addr: SocketAddr,
+    incoming_addr: SocketAddr,
     crc: u32,
     chunk_id: u32,
 ) -> Command {
     let header = "[CHUNK]".to_owned().blue().on_truecolor(35, 38, 39).bold();
-    let prefix = format!(" received from {} asking for {}/{}", sender_addr, crc, chunk_id);
+    let prefix = format!(" asked by {} asking for {}/{}", incoming_addr, crc, chunk_id);
 
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();
@@ -107,7 +107,7 @@ pub async fn serve_find_node(
     let header = "[FIND_NODE]".to_owned().blue().on_truecolor(35, 38, 39).bold();
     log!(
         header,
-        " received from {}({}) for {} and send back {:?}",
+        " asked by {}({}) for {} and send back {:?}",
         sender,
         sender_addr,
         target,
@@ -117,16 +117,18 @@ pub async fn serve_find_node(
 }
 
 // Received the sender id, and response with this server id.
-pub async fn serve_ping(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, crc: u32) -> Command {
+pub async fn serve_ping(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, sender_id: u32) -> Command {
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();
 
     let own_id = ctx.dht.id();
+    ctx.dht.add_node(sender_id, sender_addr).await;
+
     let header = "[PING]".to_owned().blue().on_truecolor(35, 38, 39).bold();
     log!(
         header,
-        " received from {}({}), sending this server peer id {}",
-        crc,
+        " asked by {}({}), sending this server peer id {}",
+        sender_id,
         sender_addr,
         own_id
     );
@@ -137,6 +139,7 @@ pub async fn serve_ping(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, crc: 
 pub async fn serve_store(
     ctx: Arc<Mutex<Context>>,
     sender_addr: SocketAddr,
+    sender_id: u32,
     key: u32,
     message: String,
 ) -> Command {
@@ -146,23 +149,32 @@ pub async fn serve_store(
     let header = "[STORE_VALUE]".to_owned().blue().on_truecolor(35, 38, 39).bold();
     log!(
         header,
-        " received from {}, store {}={}",
+        " asked by {}({}), store {}={}",
+        sender_id,
         sender_addr,
         key,
         &message
     );
+
     ctx.dht.store_value(key, message);
+    ctx.dht.add_node(sender_id, sender_addr).await;
 
     Command::StoreResponse()
 }
 
 // Allow a client to put a value inside this server.
-pub async fn serve_find_value(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, key: u32) -> Command {
+pub async fn serve_find_value(
+    ctx: Arc<Mutex<Context>>,
+    sender_addr: SocketAddr,
+    sender_id: u32,
+    key: u32,
+) -> Command {
     let header = "[GET]".to_owned().blue().on_truecolor(35, 38, 39).bold();
-    let prefix = format!(" {} ask for {}", sender_addr, key,);
+    let prefix = format!(" {}({}) ask for {}", sender_id, sender_addr, key,);
 
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();
+    ctx.dht.add_node(sender_id, sender_addr).await;
     let message = ctx.dht.get_value(key);
 
     match message {
@@ -178,9 +190,9 @@ pub async fn serve_find_value(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr,
 }
 
 // Display the message the user send.
-pub async fn serve_message(_: Arc<Mutex<Context>>, sender_addr: SocketAddr, message: String) -> Command {
+pub async fn serve_message(_: Arc<Mutex<Context>>, incoming_addr: SocketAddr, message: String) -> Command {
     let header = "[MESSAGE]".to_owned().yellow().on_truecolor(35, 38, 39).bold();
-    log!(header, " user {}, send: \"{}\"", sender_addr, message);
+    log!(header, " user {}, send: \"{}\"", incoming_addr, message);
 
     Command::MessageResponse()
 }
@@ -190,36 +202,37 @@ pub async fn serve_message(_: Arc<Mutex<Context>>, sender_addr: SocketAddr, mess
 pub async fn serve_announce(
     ctx: Arc<Mutex<Context>>,
     sender_addr: SocketAddr,
-    sender: u32,
+    sender_id: u32,
     crc: u32,
 ) -> Command {
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();
 
-    let header = "[ANNOUNCE]".to_owned().yellow().on_truecolor(35, 38, 39).bold();
+    let header = "[ANNOUNCE]".to_owned().blue().on_truecolor(35, 38, 39).bold();
     log!(
         header,
         " peer {}({}), announce: he has the file {}",
         sender_addr,
-        sender,
+        sender_id,
         crc
     );
 
     ctx.dht.store_file_peer(
         crc,
         Peer {
-            id: sender,
+            id: sender_id,
             addr: sender_addr,
         },
     );
+    ctx.dht.add_node(sender_id, sender_addr).await;
 
     Command::AnnounceResponse()
 }
 
 // Get the list of all peers which are sharing a file, given its id/crc.
-pub async fn serve_get_peers(ctx: Arc<Mutex<Context>>, sender_addr: SocketAddr, crc: u32) -> Command {
+pub async fn serve_get_peers(ctx: Arc<Mutex<Context>>, incoming_addr: SocketAddr, crc: u32) -> Command {
     let header = "[GET_PEERS]".to_owned().blue().on_truecolor(35, 38, 39).bold();
-    let prefix = format!(" peer {}, ask peers for {}", sender_addr, crc);
+    let prefix = format!(" peer {}, ask peers for {}", incoming_addr, crc);
 
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();

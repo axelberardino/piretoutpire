@@ -26,29 +26,39 @@ use tokio::{
 // handled.
 async fn dispatch(
     main_ctx: Arc<Mutex<Context>>,
-    sender_addr: SocketAddr,
+    incoming_addr: SocketAddr,
     writer: &mut BufWriter<WriteHalf<'_>>,
     request: Command,
 ) -> AnyResult<()> {
     let ctx = Arc::clone(&main_ctx);
     let (sender, res_command) = match request {
         // Server message handling
-        Command::FileInfoRequest(crc) => (None, serve_file_info(ctx, sender_addr, crc).await),
+        Command::FileInfoRequest(crc) => (None, serve_file_info(ctx, incoming_addr, crc).await),
         Command::ChunkRequest(crc, chunk_id) => {
-            (None, serve_file_chunk(ctx, sender_addr, crc, chunk_id).await)
+            (None, serve_file_chunk(ctx, incoming_addr, crc, chunk_id).await)
         }
-        Command::FindNodeRequest(sender, target) => (
-            Some(sender),
-            serve_find_node(ctx, sender_addr, sender, target).await,
+        Command::FindNodeRequest(peer_sender, target) => (
+            Some(peer_sender.id),
+            serve_find_node(ctx, peer_sender.addr, peer_sender.id, target).await,
         ),
-        Command::PingRequest(sender) => (Some(sender), serve_ping(ctx, sender_addr, sender).await),
-        Command::StoreRequest(key, message) => (None, serve_store(ctx, sender_addr, key, message).await),
-        Command::FindValueRequest(key) => (None, serve_find_value(ctx, sender_addr, key).await),
-        Command::MessageRequest(message) => (None, serve_message(ctx, sender_addr, message).await),
-        Command::AnnounceRequest(sender, crc) => {
-            (Some(sender), serve_announce(ctx, sender_addr, sender, crc).await)
-        }
-        Command::GetPeersRequest(crc) => (None, serve_get_peers(ctx, sender_addr, crc).await),
+        Command::PingRequest(peer_sender) => (
+            Some(peer_sender.id),
+            serve_ping(ctx, peer_sender.addr, peer_sender.id).await,
+        ),
+        Command::StoreRequest(peer_sender, key, message) => (
+            None,
+            serve_store(ctx, peer_sender.addr, peer_sender.id, key, message).await,
+        ),
+        Command::FindValueRequest(peer_sender, key) => (
+            None,
+            serve_find_value(ctx, peer_sender.addr, peer_sender.id, key).await,
+        ),
+        Command::MessageRequest(message) => (None, serve_message(ctx, incoming_addr, message).await),
+        Command::AnnounceRequest(peer_sender, crc) => (
+            Some(peer_sender.id),
+            serve_announce(ctx, peer_sender.addr, peer_sender.id, crc).await,
+        ),
+        Command::GetPeersRequest(crc) => (None, serve_get_peers(ctx, incoming_addr, crc).await),
 
         // Client message handling, shouldn't be reach.
         Command::ChunkResponse(_, _, _)

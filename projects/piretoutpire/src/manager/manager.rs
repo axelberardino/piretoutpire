@@ -15,7 +15,7 @@ use crate::{
     file::{file_chunk::FileChunk, torrent_file::TorrentFile},
     network::protocol::{FileInfo, Peer},
 };
-use errors::{reexports::eyre::ContextCompat, AnyResult};
+use errors::AnyResult;
 use std::{
     net::SocketAddr,
     ops::{Deref, DerefMut},
@@ -139,15 +139,19 @@ impl Manager {
 
     // Load a file to be shared on the peer network.
     pub async fn load_file<P: AsRef<Path>>(&mut self, file: P) -> AnyResult<()> {
-        let torrent = TorrentFile::new(
+        let torrent = TorrentFile::from(
             file.as_ref().display().to_string() + ".metadata",
             file.as_ref().display().to_string(),
         )?;
         let chunks = FileChunk::open_existing(&torrent.metadata.original_file)?;
 
-        let mut ctx = self.ctx.lock().await;
-        ctx.available_torrents
-            .insert(torrent.metadata.file_crc, (torrent, chunks));
+        let file_crc = torrent.metadata.file_crc;
+        {
+            let mut ctx = self.ctx.lock().await;
+            ctx.available_torrents.insert(file_crc, (torrent, chunks));
+        }
+        // Then let's declare we're now sharing it as well.
+        self.announce(file_crc).await?;
 
         Ok(())
     }
@@ -287,10 +291,12 @@ impl Manager {
 
     // Send a message to a peer. Return if the peer acknowledge it.
     pub async fn send_message(&self, target: u32, message: String) -> AnyResult<bool> {
-        let mut guard = self.ctx.lock().await;
-        let ctx = guard.deref_mut();
-        // Let's check if we have a candidate, and if our exact node.
-        let close_peer = ctx.dht.find_closest_peer(target).await;
+        let close_peer = {
+            let guard = self.ctx.lock().await;
+            let ctx = guard.deref();
+            // Let's check if we have a candidate, and if our exact node.
+            ctx.dht.find_closest_peer(target).await
+        };
 
         let peer = match close_peer {
             Some(peer) if peer.id() == target => peer,
@@ -305,6 +311,9 @@ impl Manager {
                     query_find_node,
                 )
                 .await?;
+
+                let guard = self.ctx.lock().await;
+                let ctx = guard.deref();
                 let close_peer_again = ctx.dht.find_closest_peer(target).await;
                 match close_peer_again {
                     Some(peer) if peer.id() == target => peer,
@@ -321,58 +330,88 @@ impl Manager {
 
     // Return a file description from its crc
     pub async fn file_info(&mut self, crc: u32) -> AnyResult<Option<FileInfo>> {
-        match self.get_peers(crc).await? {
+        self.get_peers(crc).await?;
+
+        let peers: Option<Vec<_>> = {
+            let guard = self.ctx.lock().await;
+            let ctx = guard.deref();
+            ctx.dht
+                .get_file_peers(crc)
+                .map(|it| it.map(Clone::clone).collect())
+        };
+
+        match peers {
             Some(peers) => {
+                let mut fileinfo = None;
                 for peer in peers {
-                    let stream = Arc::new(Mutex::new(TcpStream::connect(peer.addr).await?));
-                    let res = handle_file_info(Arc::clone(&self.ctx), stream, crc).await?;
-                    if res.is_some() {
-                        return Ok(res);
+                    if let Ok(connection) = TcpStream::connect(peer.addr).await {
+                        let stream = Arc::new(Mutex::new(connection));
+
+                        let res = handle_file_info(Arc::clone(&self.ctx), stream, crc).await?;
+                        if res.is_some() {
+                            fileinfo = res;
+                        }
                     }
                 }
-                Ok(None)
+                Ok(fileinfo)
             }
             None => Ok(None),
         }
     }
 
     // Start downloading a file, or resume downloading
-    pub async fn download_file(&mut self, crc: u32) -> AnyResult<()> {
+    pub async fn download_file(&mut self, crc: u32) -> AnyResult<Option<(u32, u32)>> {
         let ctx = Arc::clone(&self.ctx);
-        // FIXME ask for peers for download
-
-        // Get some info about what to download
-        let nb_chunks = {
-            let mut guard = ctx.lock().await;
-            let ctx = guard.deref_mut();
-
-            let (_, chunks) = ctx
-                .available_torrents
-                .get(&crc)
-                .context("unable to find associated chunks")?;
-
-            chunks.nb_chunks()
+        let peers: Option<Vec<_>> = {
+            self.get_peers(crc).await?;
+            let guard = self.ctx.lock().await;
+            let ctx = guard.deref();
+            ctx.dht
+                .get_file_peers(crc)
+                .map(|it| it.map(Clone::clone).collect())
         };
+        dbg!(&peers);
 
-        // FIXME downloaded chunk abort too soon, handle that better
-        {
-            let client_addr: SocketAddr = "127.0.0.1:4000".parse()?;
-            let stream = Arc::new(Mutex::new(TcpStream::connect(client_addr).await?));
-            let mut queries = Vec::new();
-            for chunk_id in 0..nb_chunks {
-                let local_ctx = Arc::clone(&ctx);
-                let stream = Arc::clone(&stream);
+        if let Some(peers) = peers {
+            // We're trusting them to all share the same file.
+            let file_info = if let Some(peer) = peers.first() {
+                let stream = Arc::new(Mutex::new(TcpStream::connect(peer.addr).await?));
+                handle_file_info(Arc::clone(&self.ctx), stream, crc).await?
+            } else {
+                return Ok(None);
+            };
 
-                let handle =
-                    tokio::spawn(async move { handle_file_chunk(local_ctx, stream, crc, chunk_id).await });
-                queries.push(handle);
-            }
-            for handle in queries {
-                handle.await??;
+            if let Some(file_info) = file_info {
+                // If the file is available, put it into our local store.
+                // Create metadata file and preallocate the file.
+                {
+                    let mut guard = ctx.lock().await;
+                    let ctx = guard.deref_mut();
+
+                    let file_to_preallocate =
+                        format!("{}/{}", ctx.working_directory, file_info.original_filename);
+                    let torrent_file = format!("{}.torrent", file_to_preallocate);
+
+                    ctx.available_torrents.insert(
+                        crc,
+                        (
+                            TorrentFile::new(torrent_file, file_to_preallocate.clone(), &file_info)?,
+                            FileChunk::open_new(file_to_preallocate, file_info.file_size)?,
+                        ),
+                    );
+                }
+
+                // Then let's declare we're now sharing it as well.
+                self.announce(crc).await?;
+
+                // Then download it!
+                let nb_chunks = file_info.nb_chunks();
+                let nb_succeed = download_file_from_peers(ctx, &peers, crc, nb_chunks).await?;
+                return Ok(Some((nb_succeed, nb_chunks)));
             }
         }
 
-        Ok(())
+        Ok(None)
     }
 
     // Find the given value by its key. Search locally, then if not found, ask
@@ -410,7 +449,7 @@ impl Manager {
             };
             for close_peer in closest_peers {
                 let stream = Arc::new(Mutex::new(TcpStream::connect(close_peer.addr()).await?));
-                let message = handle_find_value(Arc::clone(&self.ctx), stream, target).await?;
+                let message = handle_find_value(Arc::clone(&self.ctx), stream, self.id, target).await?;
                 if message.is_some() {
                     return Ok(message);
                 }
@@ -452,7 +491,7 @@ impl Manager {
             let mut nb_store = 0;
             for close_peer in closest_peers {
                 let stream = Arc::new(Mutex::new(TcpStream::connect(close_peer.addr()).await?));
-                if handle_store(Arc::clone(&self.ctx), stream, target, message.clone())
+                if handle_store(Arc::clone(&self.ctx), stream, self.id, target, message.clone())
                     .await
                     .is_ok()
                 {
@@ -501,12 +540,14 @@ impl Manager {
             };
             let mut nb_store = 0;
             for close_peer in closest_peers {
-                let stream = Arc::new(Mutex::new(TcpStream::connect(close_peer.addr()).await?));
-                if handle_announce(Arc::clone(&self.ctx), stream, self.id, crc)
-                    .await
-                    .is_ok()
-                {
-                    nb_store += 1;
+                if let Ok(connection) = TcpStream::connect(close_peer.addr()).await {
+                    let stream = Arc::new(Mutex::new(connection));
+                    if handle_announce(Arc::clone(&self.ctx), stream, self.id, crc)
+                        .await
+                        .is_ok()
+                    {
+                        nb_store += 1;
+                    }
                 }
             }
             return Ok(nb_store);
@@ -516,13 +557,13 @@ impl Manager {
     }
 
     // Get all peers who owned a file, given its crc.
-    pub async fn get_peers(&mut self, crc: u32) -> AnyResult<Option<Vec<Peer>>> {
+    pub async fn get_peers(&mut self, crc: u32) -> AnyResult<()> {
         // Start to search locally.
         let closest_peers = {
             let guard = self.ctx.lock().await;
             let ctx = guard.deref();
             if let Some(peer_iter) = ctx.dht.get_file_peers(crc) {
-                return Ok(Some(peer_iter.map(Clone::clone).collect()));
+                return Ok(());
             }
 
             ctx.dht.find_closest_peers(crc, 4).await
@@ -546,15 +587,21 @@ impl Manager {
                 ctx.dht.find_closest_peers(crc, 4).await
             };
             for close_peer in closest_peers {
-                let stream = Arc::new(Mutex::new(TcpStream::connect(close_peer.addr()).await?));
-                let message = handle_get_peers(Arc::clone(&self.ctx), stream, crc).await?;
-                if message.is_some() {
-                    return Ok(message);
+                if let Ok(connection) = TcpStream::connect(close_peer.addr()).await {
+                    let stream = Arc::new(Mutex::new(connection));
+                    let message = handle_get_peers(Arc::clone(&self.ctx), stream, crc).await?;
+                    if let Some(found_peers) = message {
+                        let mut guard = self.ctx.lock().await;
+                        let ctx = guard.deref_mut();
+                        for found_peer in found_peers {
+                            ctx.dht.store_file_peer(crc, found_peer);
+                        }
+                    }
                 }
             }
         }
 
-        Ok(None)
+        Ok(())
     }
 }
 
@@ -581,4 +628,57 @@ async fn dump_dht(ctx: Arc<Mutex<Context>>, dht_config_filename: &String) -> Any
     let ctx = guard.deref();
     ctx.dht.dump_to_file(Path::new(dht_config_filename)).await?;
     Ok(())
+}
+
+// Download a file from a group of peers. Favor fastest peers.
+// FIXME naive implementation.
+async fn download_file_from_peers(
+    ctx: Arc<Mutex<Context>>,
+    peers: &[Peer],
+    file_crc: u32,
+    nb_chunks: u32,
+) -> AnyResult<u32> {
+    let jobs_queue = Arc::new(Mutex::new(((0..nb_chunks).collect::<Vec<_>>(), 0u32)));
+
+    let mut handles = Vec::with_capacity(peers.len());
+    for peer in peers {
+        let connection = TcpStream::connect(peer.addr).await;
+        let stream = if let Ok(stream) = connection {
+            Arc::new(Mutex::new(stream))
+        } else {
+            continue;
+        };
+
+        let peer_ctx = Arc::clone(&ctx);
+        let peer_jobs_queue = Arc::clone(&jobs_queue);
+        let handle = tokio::spawn(async move {
+            loop {
+                let local_ctx = Arc::clone(&peer_ctx);
+                let local_jobs = Arc::clone(&peer_jobs_queue);
+                let mut guard = local_jobs.lock().await;
+                let (jobs, nb_succeed) = guard.deref_mut();
+                if let Some(chunk_id) = jobs.pop() {
+                    if let Ok(succeed) =
+                        handle_file_chunk(local_ctx, Arc::clone(&stream), file_crc, chunk_id).await
+                    {
+                        if succeed {
+                            *nb_succeed += 1;
+                        }
+                    }
+                } else {
+                    break;
+                }
+            }
+        });
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.await?;
+    }
+
+    let guard = jobs_queue.lock().await;
+    let (_, nb_succeed) = guard.deref();
+
+    Ok(*nb_succeed)
 }

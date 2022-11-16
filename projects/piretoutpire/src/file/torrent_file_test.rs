@@ -10,7 +10,7 @@ fn test_create_metadata_from_one_chunk_file() -> AnyResult<()> {
     fc.write_chunk(0, &data)?;
 
     let tmp_torrent_file = temp_file::empty();
-    let torrent = TorrentFile::new_with_chunk_size::<65535>(tmp_torrent_file.path(), tmp_file.path())?;
+    let torrent = TorrentFile::from_with_chunk_size::<65535>(tmp_torrent_file.path(), tmp_file.path())?;
     assert_eq!(1364906956, torrent.metadata.file_crc);
     assert_eq!(5, torrent.metadata.file_size);
     assert_eq!(65535, torrent.metadata.chunk_size);
@@ -30,7 +30,7 @@ fn test_create_metadata_from_many_chunks_file() -> AnyResult<()> {
     }
 
     let tmp_torrent_file = temp_file::empty();
-    let torrent = TorrentFile::new_with_chunk_size::<1>(tmp_torrent_file.path(), tmp_file.path())?;
+    let torrent = TorrentFile::from_with_chunk_size::<1>(tmp_torrent_file.path(), tmp_file.path())?;
     assert_eq!(1364906956, torrent.metadata.file_crc);
     assert_eq!(5, torrent.metadata.file_size);
     assert_eq!(1, torrent.metadata.chunk_size);
@@ -59,7 +59,7 @@ fn test_reload_existing_torrent() -> AnyResult<()> {
             .expect("file must exists!");
         fc.write_chunk(0, &data)?;
 
-        _ = TorrentFile::new_with_chunk_size::<65535>(tmp_torrent_file.path(), tmp_file.path())?;
+        _ = TorrentFile::from_with_chunk_size::<65535>(tmp_torrent_file.path(), tmp_file.path())?;
     }
 
     let torrent = TorrentFile::load(tmp_torrent_file.path())?;
@@ -82,7 +82,7 @@ fn test_reload_existing_torrent_but_not_found_associated_file() -> AnyResult<()>
             .expect("file must exists!");
         fc.write_chunk(0, &data)?;
 
-        _ = TorrentFile::new_with_chunk_size::<65535>(tmp_torrent_file.path(), tmp_file.path())?;
+        _ = TorrentFile::from_with_chunk_size::<65535>(tmp_torrent_file.path(), tmp_file.path())?;
     }
 
     let torrent = TorrentFile::load(tmp_torrent_file.path());
@@ -102,7 +102,7 @@ fn test_reload_existing_torrent_but_invalid_crc_file() -> AnyResult<()> {
             .expect("file must exists!");
         fc.write_chunk(0, &data)?;
 
-        _ = TorrentFile::new_with_chunk_size::<65535>(tmp_torrent_file.path(), tmp_file.path())?;
+        _ = TorrentFile::from_with_chunk_size::<65535>(tmp_torrent_file.path(), tmp_file.path())?;
     }
 
     // Corrupt file.
