@@ -8,7 +8,7 @@ use crate::{
     read_all,
 };
 use errors::AnyResult;
-use std::{net::SocketAddr, ops::Deref, sync::Arc, time::Duration};
+use std::{net::SocketAddr, ops::DerefMut, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufWriter},
     net::{tcp::WriteHalf, TcpStream},
@@ -27,17 +27,24 @@ async fn dispatch(
     request: Command,
 ) -> AnyResult<()> {
     let ctx = Arc::clone(&main_ctx);
-    let res_command = match request {
+    let (sender, res_command) = match request {
         // Server message handling
-        Command::FileInfoRequest(crc) => serve_file_info(ctx, sender_addr, crc).await,
-        Command::ChunkRequest(crc, chunk_id) => serve_file_chunk(ctx, sender_addr, crc, chunk_id).await,
-        Command::FindNodeRequest(sender, target) => serve_find_node(ctx, sender_addr, sender, target).await,
-        Command::PingRequest(crc) => serve_ping(ctx, sender_addr, crc).await,
-        Command::StoreRequest(key, message) => serve_store(ctx, sender_addr, key, message).await,
-        Command::FindValueRequest(key) => serve_find_value(ctx, sender_addr, key).await,
-        Command::MessageRequest(message) => serve_message(ctx, sender_addr, message).await,
-        Command::AnnounceRequest(sender, crc) => serve_announce(ctx, sender_addr, sender, crc).await,
-        Command::GetPeersRequest(crc) => serve_get_peers(ctx, sender_addr, crc).await,
+        Command::FileInfoRequest(crc) => (None, serve_file_info(ctx, sender_addr, crc).await),
+        Command::ChunkRequest(crc, chunk_id) => {
+            (None, serve_file_chunk(ctx, sender_addr, crc, chunk_id).await)
+        }
+        Command::FindNodeRequest(sender, target) => (
+            Some(sender),
+            serve_find_node(ctx, sender_addr, sender, target).await,
+        ),
+        Command::PingRequest(sender) => (Some(sender), serve_ping(ctx, sender_addr, sender).await),
+        Command::StoreRequest(key, message) => (None, serve_store(ctx, sender_addr, key, message).await),
+        Command::FindValueRequest(key) => (None, serve_find_value(ctx, sender_addr, key).await),
+        Command::MessageRequest(message) => (None, serve_message(ctx, sender_addr, message).await),
+        Command::AnnounceRequest(sender, crc) => {
+            (Some(sender), serve_announce(ctx, sender_addr, sender, crc).await)
+        }
+        Command::GetPeersRequest(crc) => (None, serve_get_peers(ctx, sender_addr, crc).await),
 
         // Client message handling, shouldn't be reach.
         Command::ChunkResponse(_, _, _)
@@ -54,9 +61,15 @@ async fn dispatch(
 
     let response: Vec<u8> = res_command.into();
     {
+        let mut guard = main_ctx.lock().await;
+        let ctx = guard.deref_mut();
+
+        // Mark the peer who contact us, as alive.
+        if let Some(sender) = sender {
+            ctx.dht.peer_has_responded(sender).await;
+        }
+
         // Check if we need to simulate a slowness.
-        let guard = main_ctx.lock().await;
-        let ctx = guard.deref();
         if let Some(wait_time) = ctx.slowness {
             sleep(wait_time).await;
         }

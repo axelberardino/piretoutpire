@@ -90,7 +90,7 @@ impl DistributedHashTable {
 
     // Clean the whole dht.
     pub async fn clean(&mut self) {
-        self.routing_table.clean().await;
+        self.routing_table.clear().await;
     }
 
     // Dump this dht into a file.
@@ -171,6 +171,17 @@ impl DistributedHashTable {
     // Get a list of peers who own a given file.
     pub fn get_file_peers(&self, key: u32) -> Option<impl Iterator<Item = &Peer>> {
         self.files_store.get(&key).and_then(|peers| Some(peers.iter()))
+    }
+
+    // Flag that we requested a peer. A peer which is requested a lot, but never
+    // answer will be considred bad.
+    pub async fn peer_was_requested(&mut self, target: u32) {
+        self.routing_table.peer_was_requested(target).await;
+    }
+
+    // Flag that the peer correctly responded, hence is alive.
+    pub async fn peer_has_responded(&mut self, target: u32) {
+        self.routing_table.peer_has_responded(target).await;
     }
 }
 

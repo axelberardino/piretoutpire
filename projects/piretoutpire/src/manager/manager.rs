@@ -449,7 +449,10 @@ impl Manager {
             let mut nb_store = 0;
             for close_peer in closest_peers {
                 let stream = Arc::new(Mutex::new(TcpStream::connect(close_peer.addr()).await?));
-                if handle_announce(stream, self.id, crc).await.is_ok() {
+                if handle_announce(Arc::clone(&self.ctx), stream, self.id, crc)
+                    .await
+                    .is_ok()
+                {
                     nb_store += 1;
                 }
             }
@@ -507,7 +510,7 @@ impl Manager {
 // Ping a peer from its real address, ask him its id and put it into our dht.
 async fn ping(ctx: Arc<Mutex<Context>>, peer: Peer, sender: u32) -> AnyResult<u32> {
     let stream = Arc::new(Mutex::new(TcpStream::connect(peer.addr).await?));
-    let target = handle_ping(stream, sender).await?;
+    let target = handle_ping(Arc::clone(&ctx), stream, sender).await?;
 
     // The peer just answered us, let's add him into our dht.
     {

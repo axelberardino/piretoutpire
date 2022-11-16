@@ -41,8 +41,8 @@ impl RoutingTable {
         self.latest_too_far_peers.iter()
     }
 
-    // Clean the routing table.
-    pub async fn clean(&mut self) {
+    // Clear the routing table.
+    pub async fn clear(&mut self) {
         self.bucket_tree = BucketTree::new();
     }
 
@@ -90,6 +90,17 @@ impl RoutingTable {
             .collect::<Vec<_>>();
         peers.sort_by_key(|peer| distance(peer.id(), target));
         peers.into_iter().take(nb)
+    }
+
+    // Flag that we requested a peer. A peer which is requested a lot, but never
+    // answer will be considred bad.
+    pub async fn peer_was_requested(&mut self, target: u32) {
+        self.bucket_tree.peer_was_requested(target).await;
+    }
+
+    // Flag that the peer correctly responded, hence is alive.
+    pub async fn peer_has_responded(&mut self, target: u32) {
+        self.bucket_tree.peer_has_responded(target).await;
     }
 }
 

@@ -10,6 +10,22 @@ use errors::{bail, AnyResult};
 use std::{ops::DerefMut, sync::Arc};
 use tokio::{net::TcpStream, sync::Mutex};
 
+// Helpers ---------------------------------------------------------------------
+
+// Mark that we're trying to contact a given peer.
+async fn peer_was_requested(ctx: Arc<Mutex<Context>>, target: u32) {
+    let mut guard = ctx.lock().await;
+    let ctx = guard.deref_mut();
+    ctx.dht.peer_was_requested(target).await;
+}
+
+// Mark that we succeed to contact a given peer.
+async fn peer_has_responded(ctx: Arc<Mutex<Context>>, target: u32) {
+    let mut guard = ctx.lock().await;
+    let ctx = guard.deref_mut();
+    ctx.dht.peer_has_responded(target).await;
+}
+
 // Client API ------------------------------------------------------------------
 
 // Get file info from its ID (crc).
@@ -100,11 +116,14 @@ pub async fn handle_file_chunk(
 
 // Ask for a node in the DHT.
 pub async fn handle_find_node(
+    ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
     sender: u32,
     target: u32,
 ) -> AnyResult<Vec<Peer>> {
+    peer_was_requested(Arc::clone(&ctx), sender).await;
     let command = find_node(Arc::clone(&stream), sender, target).await?;
+    peer_has_responded(Arc::clone(&ctx), sender).await;
 
     match command {
         Command::FindNodeResponse(peers_found) => {
@@ -117,8 +136,14 @@ pub async fn handle_find_node(
 }
 
 // Ask a peer for it's id, and check if he's alive.
-pub async fn handle_ping(stream: Arc<Mutex<TcpStream>>, sender: u32) -> AnyResult<u32> {
+pub async fn handle_ping(
+    ctx: Arc<Mutex<Context>>,
+    stream: Arc<Mutex<TcpStream>>,
+    sender: u32,
+) -> AnyResult<u32> {
+    peer_was_requested(Arc::clone(&ctx), sender).await;
     let command = ping(Arc::clone(&stream), sender).await?;
+    peer_has_responded(Arc::clone(&ctx), sender).await;
 
     match command {
         Command::PingResponse(target) => Ok(target),
@@ -165,8 +190,15 @@ pub async fn handle_message(stream: Arc<Mutex<TcpStream>>, message: String) -> A
 }
 
 // Send to a peer that a given peer own a file (by its crc).
-pub async fn handle_announce(stream: Arc<Mutex<TcpStream>>, sender: u32, crc: u32) -> AnyResult<()> {
+pub async fn handle_announce(
+    ctx: Arc<Mutex<Context>>,
+    stream: Arc<Mutex<TcpStream>>,
+    sender: u32,
+    crc: u32,
+) -> AnyResult<()> {
+    peer_was_requested(Arc::clone(&ctx), sender).await;
     let command = announce(Arc::clone(&stream), sender, crc).await?;
+    peer_was_requested(Arc::clone(&ctx), sender).await;
 
     match command {
         Command::AnnounceResponse() => Ok(()),

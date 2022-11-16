@@ -207,6 +207,23 @@ impl BucketTree {
     pub async fn get_all_peers(&self) -> impl Iterator<Item = PeerNode> {
         self.search_closest_peers(usize::MAX).await
     }
+
+    // Flag that we requested a peer. A peer which is requested a lot, but never
+    // answer will be considred bad.
+    pub async fn peer_was_requested(&mut self, target: u32) {
+        self.modify_exact_peer(target, |peer| {
+            peer.update_last_request();
+        })
+        .await;
+    }
+
+    // Flag that the peer correctly responded, hence is alive.
+    pub async fn peer_has_responded(&mut self, target: u32) {
+        self.modify_exact_peer(target, |peer| {
+            peer.update_last_response();
+        })
+        .await;
+    }
 }
 
 // Private methods.
@@ -233,6 +250,33 @@ impl BucketTree {
         }
 
         unreachable!()
+    }
+
+    // Mark the peer has being requested (false), or responded (true).
+    async fn modify_exact_peer(&mut self, target: u32, patch: impl Fn(&mut PeerNode)) {
+        let mut queue = Vec::new();
+        queue.push(Arc::clone(&self.root));
+        while let Some(rc_tree_node) = queue.pop() {
+            let tree_node = rc_tree_node.lock().await;
+            match &tree_node.children {
+                LeafOrChildren::Leaf(_) => {
+                    // Absolutely need to drop the previous lock to avoid a deadlock!
+                    drop(tree_node);
+                    let mut tree_node = rc_tree_node.lock().await;
+                    if let LeafOrChildren::Leaf(bucket) = &mut tree_node.children {
+                        if let Some(peer) = bucket.peers.iter_mut().find(|peer| peer.id() == target) {
+                            patch(peer);
+                        }
+                    }
+                }
+                LeafOrChildren::Children(rc_left, _) => {
+                    let left = rc_left.lock().await;
+                    if target < left.end {
+                        queue.push(Arc::clone(&rc_left));
+                    }
+                }
+            }
+        }
     }
 }
 

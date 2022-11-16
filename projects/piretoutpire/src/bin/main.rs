@@ -189,7 +189,10 @@ async fn main() -> AnyResult<()> {
         .await;
     manager.set_slowness(args.slowness).await;
     if manager.load_dht(Path::new(&args.dht_filename)).await.is_err() {
-        println!("can't find dht file");
+        println!(
+            "No dht file yet at {}, a new one will be created...",
+            &args.dht_filename
+        );
     }
 
     match args.command {
