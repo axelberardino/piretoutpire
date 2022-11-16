@@ -52,9 +52,14 @@ struct Cli {
     dht_filename: String,
 
     /// Where the downloaded files and the ones to seed are located.
-    #[clap(default_value_t = String::from("/tmp/"))]
+    #[clap(default_value_t = String::from("."))]
     #[clap(long, value_name = "working-dir")]
     working_directory: String,
+
+    /// Where the downloaded files and the ones to seed are located.
+    #[clap(default_value_t = String::from("/tmp"))]
+    #[clap(long, value_name = "share-dir")]
+    share_directory: String,
 
     /// Disable the recent peers cache. On small network, with non uniform id
     /// distribution, caching peers could be hard. The "recent" peers cache is
@@ -106,6 +111,24 @@ pub enum Command {
         file_crc: u32,
     },
 
+    /// Share a given file on the network
+    #[clap(arg_required_else_help = true)]
+    #[clap(name = "share-file")]
+    ShareFile {
+        /// The filename
+        #[clap(value_parser)]
+        filename: String,
+    },
+
+    /// Share a given file on the network
+    #[clap(arg_required_else_help = true)]
+    #[clap(name = "share-dir")]
+    ShareDir {
+        /// The directory
+        #[clap(value_parser)]
+        dir: String,
+    },
+
     /// Ask a peer for file description, given its crc
     #[clap(arg_required_else_help = true)]
     #[clap(name = "file-info")]
@@ -126,7 +149,7 @@ pub enum Command {
 
     /// Store a value on the dht.
     #[clap(arg_required_else_help = true)]
-    #[clap(name = "store")]
+    #[clap(name = "store-value")]
     Store {
         /// Key
         #[clap(value_parser)]
@@ -227,7 +250,7 @@ async fn main() -> AnyResult<()> {
 
     match args.command {
         Command::Seed => {
-            manager.load_file("/tmp/seeder/toto.txt").await?;
+            manager.share_dir(&args.share_directory).await?;
             manager.start_server().await?;
         }
         Command::Bootstrap { peer_addr } => {
@@ -246,6 +269,25 @@ async fn main() -> AnyResult<()> {
         Command::DownloadFile { file_crc } => {
             manager.download_file(file_crc).await?;
             println!("File downloaded: {}", file_crc);
+        }
+        Command::ShareFile { filename } => {
+            let file_crc = manager.share_file(&filename).await?;
+            println!(
+                "File {} is shared as {}. Stopping the server will stop to seed this file",
+                filename, file_crc
+            );
+            manager.start_server().await?
+        }
+        Command::ShareDir { dir } => {
+            let files = manager.share_dir(&dir).await?;
+            println!(
+                "Folder {} is shared. Stopping the server will stop to seed these files:",
+                dir
+            );
+            for (file, crc) in files {
+                println!(" * {} => {}", crc, file);
+            }
+            manager.start_server().await?
         }
         Command::FileInfo { file_crc } => {
             let file_info = manager.file_info(file_crc).await?;

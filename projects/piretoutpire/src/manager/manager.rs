@@ -17,6 +17,7 @@ use crate::{
 };
 use errors::AnyResult;
 use std::{
+    fs,
     net::SocketAddr,
     ops::{Deref, DerefMut},
     path::Path,
@@ -156,12 +157,8 @@ impl Manager {
 
     // LOCAL FILES -------------------------------------------------------------
 
-    // FIXME load dir
-    // Load all files in a given directory to be shared on the peer network.
-    // pub async fn load_directory<P: AsRef<Path>>(&mut self, dir: P) -> AnyResult<()> {}
-
-    // Load a file to be shared on the peer network.
-    pub async fn load_file<P: AsRef<Path>>(&mut self, file: P) -> AnyResult<()> {
+    // Share a file on the peers network.
+    pub async fn share_file<P: AsRef<Path>>(&mut self, file: P) -> AnyResult<u32> {
         let torrent = TorrentFile::from(
             file.as_ref().display().to_string() + ".metadata",
             file.as_ref().display().to_string(),
@@ -176,7 +173,24 @@ impl Manager {
         // Then let's declare we're now sharing it as well.
         self.announce(file_crc).await?;
 
-        Ok(())
+        Ok(file_crc)
+    }
+
+    // Load all files in a given directory to be shared on the peer network.
+    pub async fn share_dir<P: AsRef<Path>>(&mut self, dir: P) -> AnyResult<Vec<(String, u32)>> {
+        let paths = fs::read_dir(dir)?;
+        let mut files = Vec::new();
+
+        for path in paths {
+            if let Ok(entry) = &path {
+                let filename = entry.path().display().to_string();
+                match self.share_file(&filename).await {
+                    Ok(crc) => files.push((filename, crc)),
+                    Err(err) => eprintln!("can't load {}: {}", &filename, err),
+                };
+            }
+        }
+        Ok(files)
     }
 
     // SERVER ------------------------------------------------------------------
@@ -398,7 +412,6 @@ impl Manager {
                 .get_file_peers(crc)
                 .map(|it| it.map(Clone::clone).collect())
         };
-        dbg!(&peers);
 
         if let Some(peers) = peers {
             // We're trusting them to all share the same file.
