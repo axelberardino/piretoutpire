@@ -1,7 +1,7 @@
 use super::protocol::{Command, Peer};
 use crate::manager::context::Context;
 use errors::{bail, AnyResult};
-use std::{ops::Deref, sync::Arc};
+use std::{net::SocketAddr, ops::Deref, sync::Arc};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -100,16 +100,13 @@ pub async fn file_info(
 pub async fn find_node(
     ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
-    sender: u32,
+    sender_addr: SocketAddr,
+    sender_id: u32,
     target: u32,
 ) -> AnyResult<Command> {
-    let peer = {
-        let guard = stream.lock().await;
-        let stream = guard.deref();
-        Peer {
-            id: sender,
-            addr: stream.local_addr()?,
-        }
+    let peer = Peer {
+        id: sender_id,
+        addr: sender_addr,
     };
 
     let request: Vec<u8> = Command::FindNodeRequest(peer, target).into();
@@ -121,15 +118,12 @@ pub async fn find_node(
 pub async fn ping(
     ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
-    sender: u32,
+    sender_addr: SocketAddr,
+    sender_id: u32,
 ) -> AnyResult<Command> {
-    let peer = {
-        let guard = stream.lock().await;
-        let stream = guard.deref();
-        Peer {
-            id: sender,
-            addr: stream.local_addr()?,
-        }
+    let peer = Peer {
+        id: sender_id,
+        addr: sender_addr,
     };
 
     let request: Vec<u8> = Command::PingRequest(peer).into();
@@ -141,17 +135,14 @@ pub async fn ping(
 pub async fn store(
     ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
-    sender: u32,
+    sender_addr: SocketAddr,
+    sender_id: u32,
     key: u32,
     value: String,
 ) -> AnyResult<Command> {
-    let peer = {
-        let guard = stream.lock().await;
-        let stream = guard.deref();
-        Peer {
-            id: sender,
-            addr: stream.local_addr()?,
-        }
+    let peer = Peer {
+        id: sender_id,
+        addr: sender_addr,
     };
 
     let request: Vec<u8> = Command::StoreRequest(peer, key, value).into();
@@ -163,16 +154,13 @@ pub async fn store(
 pub async fn find_value(
     ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
-    sender: u32,
+    sender_addr: SocketAddr,
+    sender_id: u32,
     key: u32,
 ) -> AnyResult<Command> {
-    let peer = {
-        let guard = stream.lock().await;
-        let stream = guard.deref();
-        Peer {
-            id: sender,
-            addr: stream.local_addr()?,
-        }
+    let peer = Peer {
+        id: sender_id,
+        addr: sender_addr,
     };
 
     let request: Vec<u8> = Command::FindValueRequest(peer, key).into();
@@ -195,16 +183,13 @@ pub async fn send_message(
 pub async fn announce(
     ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
-    sender: u32,
+    sender_addr: SocketAddr,
+    sender_id: u32,
     crc: u32,
 ) -> AnyResult<Command> {
-    let peer = {
-        let guard = stream.lock().await;
-        let stream = guard.deref();
-        Peer {
-            id: sender,
-            addr: stream.local_addr()?,
-        }
+    let peer = Peer {
+        id: sender_id,
+        addr: sender_addr,
     };
 
     let request: Vec<u8> = Command::AnnounceRequest(peer, crc).into();

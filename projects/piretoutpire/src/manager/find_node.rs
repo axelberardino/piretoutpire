@@ -1,7 +1,7 @@
 use super::{client::handle_find_node, context::Context};
 use crate::{network::protocol::Peer, utils::distance};
 use errors::{AnyError, AnyResult};
-use std::{collections::HashSet, future::Future, ops::DerefMut, sync::Arc};
+use std::{collections::HashSet, future::Future, net::SocketAddr, ops::DerefMut, sync::Arc};
 use tokio::{
     self,
     net::TcpStream,
@@ -15,19 +15,20 @@ use tokio::{
 pub async fn find_closest_node<F, T>(
     ctx: Arc<Mutex<Context>>,
     initial_peer: Peer,
-    sender: u32,
+    sender_addr: SocketAddr,
+    sender_id: u32,
     target: u32,
     max_hop: Option<u32>,
     query_func: F,
 ) -> AnyResult<Option<Peer>>
 where
-    F: FnMut(Arc<Mutex<Context>>, Peer, u32, u32) -> T + Send + Copy + 'static,
+    F: FnMut(Arc<Mutex<Context>>, Peer, SocketAddr, u32, u32) -> T + Send + Copy + 'static,
     T: Future<Output = AnyResult<Vec<Peer>>> + Send + 'static,
 {
     let mut hop = 0;
     let mut queue = vec![initial_peer];
     let mut visited = HashSet::<u32>::new();
-    visited.insert(sender); // Let's avoid ourself.
+    visited.insert(sender_id); // Let's avoid ourself.
     let mut best_distance = u32::MAX;
     let mut found_peer = None::<Peer>;
 
@@ -40,7 +41,8 @@ where
         // Will responsd with a queue containing from 0 up to 3*4 uniques nodes.
         let next_queue = parallel_find_node(
             Arc::clone(&ctx),
-            sender,
+            sender_addr,
+            sender_id,
             target,
             &mut queue,
             &mut visited,
@@ -102,7 +104,8 @@ where
 // first).
 async fn parallel_find_node<F, T>(
     ctx: Arc<Mutex<Context>>,
-    sender: u32,
+    sender_addr: SocketAddr,
+    sender_id: u32,
     target: u32,
     queue: &mut Vec<Peer>,
     visited: &mut HashSet<u32>,
@@ -110,7 +113,7 @@ async fn parallel_find_node<F, T>(
     nb_parallel: usize,
 ) -> AnyResult<Vec<Peer>>
 where
-    F: FnMut(Arc<Mutex<Context>>, Peer, u32, u32) -> T + Send + Copy + 'static,
+    F: FnMut(Arc<Mutex<Context>>, Peer, SocketAddr, u32, u32) -> T + Send + Copy + 'static,
     T: Future<Output = AnyResult<Vec<Peer>>> + Send + 'static,
 {
     let mut next_queue = Vec::new();
@@ -128,7 +131,7 @@ where
         let ctx = Arc::clone(&ctx);
         let handle = tokio::spawn(async move {
             let peer_id = peer.id;
-            let peers = query_func(ctx, peer, sender, target).await?;
+            let peers = query_func(ctx, peer, sender_addr, sender_id, target).await?;
             Ok::<(u32, Vec<Peer>), AnyError>((peer_id, peers))
         });
 
@@ -160,7 +163,8 @@ where
 pub async fn query_find_node(
     ctx: Arc<Mutex<Context>>,
     peer: Peer,
-    sender: u32,
+    sender_addr: SocketAddr,
+    sender_id: u32,
     target: u32,
 ) -> AnyResult<Vec<Peer>> {
     let (slowness, connection_timeout) = {
@@ -176,7 +180,7 @@ pub async fn query_find_node(
             if let Some(wait_time) = slowness {
                 sleep(wait_time).await;
             }
-            let peers = handle_find_node(Arc::clone(&ctx), stream, sender, target).await?;
+            let peers = handle_find_node(Arc::clone(&ctx), stream, sender_addr, sender_id, target).await?;
 
             // The peer just answered us, let's add him into our dht.
             {

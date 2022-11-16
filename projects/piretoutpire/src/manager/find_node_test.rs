@@ -39,7 +39,8 @@ async fn mock_find_node(
 async fn mocked_query_find_node_small(
     ctx: Arc<Mutex<Context>>,
     peer: Peer,
-    _sender: u32,
+    _sender_addr: SocketAddr,
+    _sender_id: u32,
     target: u32,
 ) -> AnyResult<Vec<Peer>> {
     let mut peers = HashMap::<u32, Vec<u32>>::new();
@@ -59,7 +60,8 @@ async fn mocked_query_find_node_small(
 async fn mocked_query_find_node_big(
     ctx: Arc<Mutex<Context>>,
     peer: Peer,
-    _sender: u32,
+    _sender_addr: SocketAddr,
+    _sender_id: u32,
     target: u32,
 ) -> AnyResult<Vec<Peer>> {
     let mut peers = HashMap::<u32, Vec<u32>>::new();
@@ -85,7 +87,8 @@ async fn mocked_query_find_node_big(
 async fn mocked_query_find_node_partial(
     ctx: Arc<Mutex<Context>>,
     peer: Peer,
-    _sender: u32,
+    _sender_addr: SocketAddr,
+    _sender_id: u32,
     target: u32,
 ) -> AnyResult<Vec<Peer>> {
     let mut peers = HashMap::<u32, Vec<u32>>::new();
@@ -111,19 +114,21 @@ async fn mocked_query_find_node_partial(
 
 #[tokio::test]
 async fn test_find_node_itself() -> AnyResult<()> {
-    let sender = 0;
+    let sender_id = 0;
+    let sender_addr = "127.0.0.1:4000".parse()?;
     let starting_from = 0;
     let target = 0;
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender_id, false)));
         let res = find_closest_node(
             ctx,
             Peer {
                 id: starting_from,
                 addr: "127.0.0.1:4000".parse()?,
             },
-            sender,
+            sender_addr,
+            sender_id,
             target,
             None,
             mocked_query_find_node_small,
@@ -133,14 +138,15 @@ async fn test_find_node_itself() -> AnyResult<()> {
     }
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender_id, false)));
         let res = find_closest_node(
             ctx,
             Peer {
                 id: starting_from,
                 addr: "127.0.0.1:4000".parse()?,
             },
-            sender,
+            sender_addr,
+            sender_id,
             target,
             Some(u32::MAX),
             mocked_query_find_node_small,
@@ -154,19 +160,21 @@ async fn test_find_node_itself() -> AnyResult<()> {
 
 #[tokio::test]
 async fn test_find_node_1_roundtrip() -> AnyResult<()> {
-    let sender = 0;
+    let sender_id = 0;
+    let sender_addr = "127.0.0.1:4000".parse()?;
     let starting_from = 1;
     let target = 2;
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender_id, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
                 id: starting_from,
                 addr: "127.0.0.1:4000".parse()?,
             },
-            sender,
+            sender_addr,
+            sender_id,
             target,
             None,
             mocked_query_find_node_small,
@@ -180,14 +188,15 @@ async fn test_find_node_1_roundtrip() -> AnyResult<()> {
     }
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender_id, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
                 id: starting_from,
                 addr: "127.0.0.1:4000".parse()?,
             },
-            sender,
+            sender_addr,
+            sender_id,
             target,
             Some(u32::MAX),
             mocked_query_find_node_small,
@@ -205,19 +214,21 @@ async fn test_find_node_1_roundtrip() -> AnyResult<()> {
 
 #[tokio::test]
 async fn test_find_node_max_roundtrip() -> AnyResult<()> {
-    let sender = 0;
+    let sender_id = 0;
+    let sender_addr = "127.0.0.1:4000".parse()?;
     let starting_from = 8;
     let target = 1;
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender_id, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
                 id: starting_from,
                 addr: "127.0.0.1:4000".parse()?,
             },
-            sender,
+            sender_addr,
+            sender_id,
             target,
             None,
             mocked_query_find_node_small,
@@ -227,14 +238,15 @@ async fn test_find_node_max_roundtrip() -> AnyResult<()> {
     }
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender_id, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
                 id: starting_from,
                 addr: "127.0.0.1:4000".parse()?,
             },
-            sender,
+            sender_addr,
+            sender_id,
             target,
             Some(u32::MAX),
             mocked_query_find_node_small,
@@ -248,19 +260,21 @@ async fn test_find_node_max_roundtrip() -> AnyResult<()> {
 
 #[tokio::test]
 async fn test_find_node_unbalanced_roundtrip() -> AnyResult<()> {
-    let sender = 0;
+    let sender_id = 0;
+    let sender_addr = "127.0.0.1:4000".parse()?;
     let starting_from = 1;
     let target = 8;
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender_id, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
                 id: starting_from,
                 addr: "127.0.0.1:4000".parse()?,
             },
-            sender,
+            sender_addr,
+            sender_id,
             target,
             None,
             mocked_query_find_node_small,
@@ -281,14 +295,15 @@ async fn test_find_node_unbalanced_roundtrip() -> AnyResult<()> {
     }
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender_id, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
                 id: starting_from,
                 addr: "127.0.0.1:4000".parse()?,
             },
-            sender,
+            sender_addr,
+            sender_id,
             target,
             Some(u32::MAX),
             mocked_query_find_node_small,
@@ -305,19 +320,21 @@ async fn test_find_node_unbalanced_roundtrip() -> AnyResult<()> {
 
 #[tokio::test]
 async fn test_find_node_max_roundtrip_in_a_big_mock_not_found() -> AnyResult<()> {
-    let sender = 0;
+    let sender_id = 0;
+    let sender_addr = "127.0.0.1:4000".parse()?;
     let starting_from = 1;
     let target = 47;
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender_id, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
                 id: starting_from,
                 addr: "127.0.0.1:4000".parse()?,
             },
-            sender,
+            sender_addr,
+            sender_id,
             target,
             None,
             mocked_query_find_node_big,
@@ -334,14 +351,15 @@ async fn test_find_node_max_roundtrip_in_a_big_mock_not_found() -> AnyResult<()>
     }
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender_id, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
                 id: starting_from,
                 addr: "127.0.0.1:4000".parse()?,
             },
-            sender,
+            sender_addr,
+            sender_id,
             target,
             Some(u32::MAX),
             mocked_query_find_node_big,
@@ -358,14 +376,15 @@ async fn test_find_node_max_roundtrip_in_a_big_mock_not_found() -> AnyResult<()>
     }
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new_test(sender, true)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender_id, true)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
                 id: starting_from,
                 addr: "127.0.0.1:4000".parse()?,
             },
-            sender,
+            sender_addr,
+            sender_id,
             target,
             Some(u32::MAX),
             mocked_query_find_node_big,
@@ -385,19 +404,21 @@ async fn test_find_node_max_roundtrip_in_a_big_mock_not_found() -> AnyResult<()>
 
 #[tokio::test]
 async fn test_find_node_max_roundtrip_in_a_big_mock_found() -> AnyResult<()> {
-    let sender = 0;
+    let sender_id = 0;
+    let sender_addr = "127.0.0.1:4000".parse()?;
     let starting_from = 1;
     let target = 43;
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender_id, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
                 id: starting_from,
                 addr: "127.0.0.1:4000".parse()?,
             },
-            sender,
+            sender_addr,
+            sender_id,
             target,
             None,
             mocked_query_find_node_big,
@@ -414,14 +435,15 @@ async fn test_find_node_max_roundtrip_in_a_big_mock_found() -> AnyResult<()> {
     }
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender_id, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
                 id: starting_from,
                 addr: "127.0.0.1:4000".parse()?,
             },
-            sender,
+            sender_addr,
+            sender_id,
             target,
             Some(u32::MAX),
             mocked_query_find_node_big,
@@ -441,19 +463,21 @@ async fn test_find_node_max_roundtrip_in_a_big_mock_found() -> AnyResult<()> {
 
 #[tokio::test]
 async fn test_find_node_max_roundtrip_in_a_partial_mock_found() -> AnyResult<()> {
-    let sender = 0;
+    let sender_id = 0;
+    let sender_addr = "127.0.0.1:4000".parse()?;
     let starting_from = 1;
     let target = 43;
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender_id, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
                 id: starting_from,
                 addr: "127.0.0.1:4000".parse()?,
             },
-            sender,
+            sender_addr,
+            sender_id,
             target,
             None,
             mocked_query_find_node_partial,
@@ -470,14 +494,15 @@ async fn test_find_node_max_roundtrip_in_a_partial_mock_found() -> AnyResult<()>
     }
 
     {
-        let ctx = Arc::new(Mutex::new(Context::new_test(sender, false)));
+        let ctx = Arc::new(Mutex::new(Context::new_test(sender_id, false)));
         let res = find_closest_node(
             Arc::clone(&ctx),
             Peer {
                 id: starting_from,
                 addr: "127.0.0.1:4000".parse()?,
             },
-            sender,
+            sender_addr,
+            sender_id,
             target,
             Some(u32::MAX),
             mocked_query_find_node_partial,

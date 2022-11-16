@@ -7,7 +7,7 @@ use crate::{
     },
 };
 use errors::{bail, AnyResult};
-use std::{ops::DerefMut, sync::Arc};
+use std::{net::SocketAddr, ops::DerefMut, sync::Arc};
 use tokio::{net::TcpStream, sync::Mutex};
 
 // Helpers ---------------------------------------------------------------------
@@ -116,12 +116,20 @@ pub async fn handle_file_chunk(
 pub async fn handle_find_node(
     ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
-    sender: u32,
+    sender_addr: SocketAddr,
+    sender_id: u32,
     target: u32,
 ) -> AnyResult<Vec<Peer>> {
-    peer_was_requested(Arc::clone(&ctx), sender).await;
-    let command = find_node(Arc::clone(&ctx), Arc::clone(&stream), sender, target).await?;
-    peer_has_responded(Arc::clone(&ctx), sender).await;
+    peer_was_requested(Arc::clone(&ctx), sender_id).await;
+    let command = find_node(
+        Arc::clone(&ctx),
+        Arc::clone(&stream),
+        sender_addr,
+        sender_id,
+        target,
+    )
+    .await?;
+    peer_has_responded(Arc::clone(&ctx), sender_id).await;
 
     match command {
         Command::FindNodeResponse(peers_found) => Ok(peers_found),
@@ -134,11 +142,12 @@ pub async fn handle_find_node(
 pub async fn handle_ping(
     ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
-    sender: u32,
+    sender_addr: SocketAddr,
+    sender_id: u32,
 ) -> AnyResult<u32> {
-    peer_was_requested(Arc::clone(&ctx), sender).await;
-    let command = ping(Arc::clone(&ctx), Arc::clone(&stream), sender).await?;
-    peer_has_responded(Arc::clone(&ctx), sender).await;
+    peer_was_requested(Arc::clone(&ctx), sender_id).await;
+    let command = ping(Arc::clone(&ctx), Arc::clone(&stream), sender_addr, sender_id).await?;
+    peer_has_responded(Arc::clone(&ctx), sender_id).await;
 
     match command {
         Command::PingResponse(target) => Ok(target),
@@ -151,11 +160,20 @@ pub async fn handle_ping(
 pub async fn handle_store(
     ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
-    sender: u32,
+    sender_addr: SocketAddr,
+    sender_id: u32,
     key: u32,
     value: String,
 ) -> AnyResult<()> {
-    let command = store(Arc::clone(&ctx), Arc::clone(&stream), sender, key, value).await?;
+    let command = store(
+        Arc::clone(&ctx),
+        Arc::clone(&stream),
+        sender_addr,
+        sender_id,
+        key,
+        value,
+    )
+    .await?;
 
     match command {
         Command::StoreResponse() => Ok(()),
@@ -168,10 +186,11 @@ pub async fn handle_store(
 pub async fn handle_find_value(
     ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
-    sender: u32,
+    sender_addr: SocketAddr,
+    sender_id: u32,
     key: u32,
 ) -> AnyResult<Option<String>> {
-    let command = find_value(Arc::clone(&ctx), Arc::clone(&stream), sender, key).await?;
+    let command = find_value(Arc::clone(&ctx), Arc::clone(&stream), sender_addr, sender_id, key).await?;
 
     match command {
         Command::FindValueResponse(message) => {
@@ -203,12 +222,13 @@ pub async fn handle_message(
 pub async fn handle_announce(
     ctx: Arc<Mutex<Context>>,
     stream: Arc<Mutex<TcpStream>>,
-    sender: u32,
+    sender_addr: SocketAddr,
+    sender_id: u32,
     crc: u32,
 ) -> AnyResult<()> {
-    peer_was_requested(Arc::clone(&ctx), sender).await;
-    let command = announce(Arc::clone(&ctx), Arc::clone(&stream), sender, crc).await?;
-    peer_was_requested(Arc::clone(&ctx), sender).await;
+    peer_was_requested(Arc::clone(&ctx), sender_id).await;
+    let command = announce(Arc::clone(&ctx), Arc::clone(&stream), sender_addr, sender_id, crc).await?;
+    peer_was_requested(Arc::clone(&ctx), sender_id).await;
 
     match command {
         Command::AnnounceResponse() => Ok(()),
