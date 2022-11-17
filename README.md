@@ -40,13 +40,27 @@ limitations and security flaws.
 
 The simplest way you can launch a server is by doing that:
 ```sh
-cargo run -- seed
+cargo run -- --server-addr="127.0.0.1:4001" --peer-id=1 seed
 ```
 
 <p align="center">
     <img src="doc/terminal.png" width="800">
 </p>
 
+This seed server will be joinable, via a bootstrap  by another peer:
+```sh
+# Join the seeder above:
+cargo run -- --server-addr="127.0.0.1:4002" --peer-id=2 bootstrap 127.0.0.1:4001
+# Pass in seed mode:
+cargo run -- --server-addr="127.0.0.1:4002" --peer-id=2 seed
+# Join the seeder above:
+cargo run -- --server-addr="127.0.0.1:4003" --peer-id=3 bootstrap 127.0.0.1:4002
+# List which peers we currently know:
+cargo run -- --server-addr="127.0.0.1:4003" --peer-id=3 list
+# Let's send a message to peer 1 (we only know through 2)!
+cargo run -- --server-addr="127.0.0.1:4003" --peer-id=3 message 1 "Hello"
+
+```
 
 Then, there is a CLI (using clap and colored) which can be called like that:
 ```sh
