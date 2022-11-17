@@ -17,17 +17,17 @@ directly from one user to the other across the network, in peer-to-peer, and
 doesn't rely on a central server.
 
 Implementation use the Kademlia DHT algorithm, and handle these 4 concepts:
-  * ping: check if a peer is alive
-  * find_node: find for the "closest" nodes, given a target
-  * store_value: store a value into the dht
-  * find_value: get a value store into the dht
+  * **ping**: check if a peer is alive
+  * **find_node**: find for the "closest" nodes, given a target
+  * **store_value**: store a value into the dht
+  * **find_value**: get a value store into the dht
 
 On top of that, some concept have been taken from bittorent, such as:
-  * announce: tell which peers are able to share a file, even partially
-  * get_peers: retrieve all the peers who share a given file
+  * **announce**: tell which peers are able to share a file, even partially
+  * **get_peers**: retrieve all the peers who share a given file
 
 Then:
-  * send_message: simply send a message to a user by its ID.
+  * **send_message**: simply send a message to a user by its ID.
 
 # Documentation and explanation
 
@@ -40,33 +40,50 @@ limitations and security flaws.
 
 The simplest way you can launch a server is by doing that:
 ```sh
-cargo run -- --server-addr="127.0.0.1:4001" --peer-id=1 seed
+# Launch a new peer in seed mode (peer-id will be random)
+cargo run -- seed
 ```
 
 <p align="center">
     <img src="doc/terminal.png" width="800">
 </p>
 
-This seed server will be joinable, via a bootstrap  by another peer:
+
+## Simple use case: sending a message
+
+In a first terminal:
+```sh
+# Start the first peer, this seed server will be joinable, via a bootstrap by other peers
+cargo run -- --server-addr="127.0.0.1:4001" --peer-id=1 seed
+```
+
+In a second terminal:
 ```sh
 # Join the seeder above:
 cargo run -- --server-addr="127.0.0.1:4002" --peer-id=2 bootstrap 127.0.0.1:4001
 # Pass in seed mode:
 cargo run -- --server-addr="127.0.0.1:4002" --peer-id=2 seed
+```
+
+In a third one:
+```sh
 # Join the seeder above:
 cargo run -- --server-addr="127.0.0.1:4003" --peer-id=3 bootstrap 127.0.0.1:4002
 # List which peers we currently know:
 cargo run -- --server-addr="127.0.0.1:4003" --peer-id=3 list
 # Let's send a message to peer 1 (we only know through 2)!
 cargo run -- --server-addr="127.0.0.1:4003" --peer-id=3 message 1 "Hello"
-
 ```
 
-Then, there is a CLI (using clap and colored) which can be called like that:
+## Help and more features
+
+There is a CLI (using clap and colored) which can be called like that:
 ```sh
 cargo run -- help
 ```
 The help will show all the possibilities, as you can see here: [Help](doc/Help.md).
+
+## Building
 
 It's also possible to generate the binary using:
 ```sh
@@ -100,7 +117,7 @@ Press enter to start the demo
 
 # Tests
 
-Everything is unit tested. You can launch all the tests that with:
+Everything is unit tested. You can launch all the tests with:
 ```sh
 cargo test
 ```
