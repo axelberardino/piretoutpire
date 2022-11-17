@@ -67,7 +67,7 @@ sleep 0.5
 section "Let's search again, this time the value has been found!"
 launch "./$BIN --server-addr=\"127.0.0.1:4031\" --peer-id=31 --dht-filename=$BASE_DIR/31/dht --max-hop=99 find-value 42"
 
-section "Stop the seed peer"
+section "Stop the seed peers"
 launch "kill $server_pids &>/dev/null"
 
 wait

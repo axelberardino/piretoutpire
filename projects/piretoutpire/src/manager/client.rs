@@ -48,7 +48,7 @@ pub async fn handle_file_info(
                 std::collections::hash_map::Entry::Vacant(entry) => {
                     let torrent = TorrentFile::preallocate(
                         format!(
-                            "{}/{}.metadata",
+                            "{}/{}.torrent",
                             ctx.working_directory, file_info.original_filename
                         ),
                         file_info.original_filename.clone(),

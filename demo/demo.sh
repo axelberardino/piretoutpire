@@ -1,9 +1,10 @@
 #!/bin/bash
 
 BASE_DIR=/tmp/p2p-demo
-# DEMOS="simple-communication.sh message-network-of-2.sh message-network-of-3.sh\
-#     message-big-network.sh value-big-network.sh share-file.sh"
-DEMOS="share-file.sh"
+# DEMOS="simple-communication.sh message-network-of-2.sh\
+#     message-network-of-3.sh message-big-network.sh\
+#     value-big-network.sh share-file.sh bittorent-simulator.sh"
+DEMOS="bittorent-simulator.sh"
 
 trap "echo" SIGTERM
 
@@ -29,13 +30,15 @@ if [ "$cur_dir" = "demo" ]; then
     prefix=.
 fi
 
-for demo in $DEMOS; do
-    ./${prefix}/${demo} "$BASE_DIR"
-    read -p "Press enter to start the next demo"
-done
-
 BIN="pire2pire"
 
 if [ -z "$BIN" ]; then
     echo "can't found binary, check the make build command has been launch in the root repository"
 fi
+
+for demo in $DEMOS; do
+    ./${prefix}/${demo} "$BASE_DIR"
+    read -p "Press enter to start the next demo"
+done
+
+echo "Demo ended!"

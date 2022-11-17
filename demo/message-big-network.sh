@@ -57,7 +57,7 @@ launch "./$BIN --server-addr=\"127.0.0.1:4031\" --peer-id=31 --dht-filename=$BAS
 section "Peer 1 should have received a ping from 31 and get its message"
 launch "cat $LOG"
 
-section "Stop the seed peer"
+section "Stop the seed peers"
 launch "kill $server_pids &>/dev/null"
 
 wait
