@@ -74,11 +74,6 @@ struct Cli {
 
 #[derive(Debug, Subcommand, Eq, PartialEq)]
 pub enum Command {
-    // HACK
-    /// Test leech
-    #[clap(name = "leech")]
-    Leech,
-
     /// Passively seed files and dht
     #[clap(name = "seed")]
     Seed,
@@ -338,17 +333,6 @@ async fn main() -> AnyResult<()> {
             for peer in peers {
                 println!("  * {} ({})", peer.id(), peer.addr());
             }
-        }
-        Command::Leech => {
-            let peer_found = manager.bootstrap("127.0.0.1:4000".parse()?).await?;
-            manager.dump_dht().await?;
-            println!("Bootstrap done, find node: {:?}", peer_found);
-
-            let succeed = manager.send_message(0, "hello dear server".to_owned()).await?;
-            println!("Message sent: {}", succeed);
-
-            let res = manager.download_file(2021542958).await?;
-            println!("download: {:?}", res);
         }
     }
 

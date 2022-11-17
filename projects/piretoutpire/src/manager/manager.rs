@@ -681,7 +681,7 @@ async fn dump_dht(ctx: Arc<Mutex<Context>>) -> AnyResult<()> {
 }
 
 // Download a file from a group of peers. Favor fastest peers.
-// FIXME naive implementation.
+// Care: naive implementation! It will not handle peer deconnection.
 async fn download_file_from_peers(
     ctx: Arc<Mutex<Context>>,
     peers: &[Peer],

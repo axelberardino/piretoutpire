@@ -3,14 +3,32 @@
 ![logo](doc/pire_to_pire.png)
 
 This project implements a simplified p2p network. It allows to send message from
-a peer to another in a decentralized manner. Also, file sharing (like
-bittorrent) is also handled.
+a peer to another in a decentralized manner. File sharing (like bittorrent) is
+also handled.
 
-More information is available in [doc section](doc/README.md).
+If user A sends a message M to user B and B is known by the service, the service
+will deliver M to user B. All messages sent by users will be transferred
+directly from one user to the other across the network, in peer-to-peer, and
+doesn't rely on a central server.
+
+Implementation use the Kademlia DHT algorithm, and handle these 4 concepts:
+  * ping: check if a peer is alive
+  * find_node: find for the "closest" nodes, given a target
+  * store_value: store a value into the dht
+  * find_value: get a value store into the dht
+
+On top of that, some concept have been taken from bittorent, such as:
+  * announce: tell which peers are able to share a file, even partially
+  * get_peers: retrieve all the peers who share a given file
+
+Then:
+  * send_message: simply send a message to a user by its ID.
+
+More information is available in the [doc section](doc/README.md).
 
 # Running and playing with it
 
-Launch a server like that:
+The simplest way you can launch a server is by doing that:
 ```sh
 cargo run -- seed
 ```
@@ -19,6 +37,7 @@ Then, there is a CLI (using clap and colored) which can be called like that:
 ```sh
 cargo run -- help
 ```
+The help will show all the possibilities.
 
 It's also possible to generate the binary using:
 ```sh
@@ -28,7 +47,9 @@ make build
 
 # Demo
 
-A demo is provided to show all available features.
+A demo is provided to show all available features. This demo is a script which
+will simulate many situations, to show all handled features. Basically just run
+it, watch the presentation and press enter to pass to the next simulation.
 
 ```sh
 make demo

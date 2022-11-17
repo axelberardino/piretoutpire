@@ -3,7 +3,7 @@
 You'll find here some documentations about this project.
 
 First, let's describe how a peer to peer is working, generally speaking:\
-[Peer to peer concept](concept.md)
+[Peer to peer concept](Concept.md)
 
 Then, let's tackle this project implementation. What is handled, what
 choices has been made and what are some limitations:\

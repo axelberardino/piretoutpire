@@ -29,5 +29,4 @@ network will think a user do share almost any known files (there's only 4
 billions). The real peer, who was impersonated, might get spammed/ddos by all
 peers wanted files from him.
 
-## Token
 
