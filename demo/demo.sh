@@ -1,10 +1,10 @@
 #!/bin/bash
 
 BASE_DIR=/tmp/p2p-demo
-# DEMOS="simple-communication.sh message-network-of-2.sh\
-#     message-network-of-3.sh message-big-network.sh\
-#     value-big-network.sh share-file.sh bittorent-simulator.sh"
-DEMOS="bittorent-simulator.sh"
+DEMOS="simple-communication.sh message-network-of-2.sh\
+    message-network-of-3.sh message-big-network.sh\
+    value-big-network.sh share-file.sh bittorent-simulator.sh"
+# DEMOS="bittorent-simulator.sh"
 
 trap "echo" SIGTERM
 

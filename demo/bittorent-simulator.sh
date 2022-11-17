@@ -108,4 +108,4 @@ launch "\ls -l $BASE_DIR/25/files/"
 section "Stop the seed peers"
 launch "kill $server_pids &>/dev/null"
 
-wait
+# wait

@@ -32,11 +32,11 @@ launch "./$BIN --server-addr=\"127.0.0.1:4002\" --peer-id=2 --dht-filename=$BASE
 section "B ask for a file by it's crc, and get it"
 launch "./$BIN --server-addr=\"127.0.0.1:4002\" --peer-id=2 --dht-filename=$BASE_DIR/b/dht --working-dir=$BASE_DIR/b/ --share-dir=$BASE_DIR/b download 1458724153"
 
-section "B now also own a copy of the file!"
-launch "\ls -l $BASE_DIR/b/test.png"
-
 section "Peer A (seed server) should have received a download request from B and share the file by chunks"
 launch "cat $LOG"
+
+section "B now also own a copy of the file!"
+launch "\ls -l $BASE_DIR/b/test.png"
 
 section "Stop the seed peer"
 launch "kill $server_pid &>/dev/null"

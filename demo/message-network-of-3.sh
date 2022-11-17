@@ -12,12 +12,12 @@ echo
 
 section "Clean folder $DATA_DIR"
 launch "rm -rf $BASE_DIR/*"
-launch "mkdir -p $BASE_DIR/a $BASE_DIR/b $BASE_DIR/c"
+launch "mkdir -p $BASE_DIR/a/files $BASE_DIR/b/files $BASE_DIR/c/files"
 
 LOG="$BASE_DIR/log"
 
 section "Launch peer A"
-launch_bg "./$BIN --server-addr=\"127.0.0.1:4001\" --peer-id=1 --dht-filename=$BASE_DIR/a.dht seed" "$LOG"
+launch_bg "./$BIN --server-addr=\"127.0.0.1:4001\" --peer-id=1 --dht-filename=$BASE_DIR/a.dht --share-dir=$BASE_DIR/a/files --working-dir=$BASE_DIR/a/files seed" "$LOG"
 server_pid1=$!
 sleep 1
 
@@ -25,7 +25,7 @@ section "Bootstrap peer B (from peer A)"
 launch "./$BIN --server-addr=\"127.0.0.1:4002\" --peer-id=2 --dht-filename=$BASE_DIR/b.dht bootstrap 127.0.0.1:4001"
 
 section "Launch peer B"
-launch_bg "./$BIN --server-addr=\"127.0.0.1:4002\" --peer-id=2 --dht-filename=$BASE_DIR/b.dht seed" "/dev/null"
+launch_bg "./$BIN --server-addr=\"127.0.0.1:4002\" --peer-id=2 --dht-filename=$BASE_DIR/b.dht  --share-dir=$BASE_DIR/b/files --working-dir=$BASE_DIR/b/files seed" "/dev/null"
 server_pid2=$!
 sleep 1
 
