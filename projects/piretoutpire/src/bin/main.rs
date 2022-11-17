@@ -54,16 +54,16 @@ struct Cli {
     /// Where the downloaded files and the ones to seed are located.
     #[clap(default_value_t = String::from("."))]
     #[clap(long, value_name = "working-dir")]
-    working_directory: String,
+    working_dir: String,
 
     /// Where the downloaded files and the ones to seed are located.
     #[clap(default_value_t = String::from("/tmp"))]
     #[clap(long, value_name = "share-dir")]
-    share_directory: String,
+    share_dir: String,
 
     /// Disable the recent peers cache. On small network, with non uniform id
     /// distribution, caching peers could be hard. The "recent" peers cache is
-    /// used on top of the routing table, to help finding peers. On big network,
+    /// used on top of the routing table, to help find peers. On big network,
     /// it's usually not needed and could be disactivated.
     #[clap(long, value_name = "disable-recent-peers-cache", action)]
     disable_recent_peers_cache: bool,
@@ -154,7 +154,7 @@ pub enum Command {
         /// Key
         #[clap(value_parser)]
         key: u32,
-        /// value
+        /// Value
         #[clap(value_parser)]
         value: String,
     },
@@ -217,12 +217,7 @@ async fn main() -> AnyResult<()> {
     let peer_id = args.peer_id.unwrap_or_else(|| get_random_id());
     let own_addr: SocketAddr = args.server_addr.parse()?;
 
-    let mut manager = Manager::new(
-        peer_id,
-        own_addr,
-        args.dht_filename.clone(),
-        args.working_directory,
-    );
+    let mut manager = Manager::new(peer_id, own_addr, args.dht_filename.clone(), args.working_dir);
     manager.set_max_hop(args.max_hop);
     manager
         .set_recent_peers_cache_enable(!args.disable_recent_peers_cache)
@@ -250,7 +245,7 @@ async fn main() -> AnyResult<()> {
 
     match args.command {
         Command::Seed => {
-            manager.share_dir(&args.share_directory).await?;
+            manager.share_dir(&args.share_dir).await?;
             manager.start_server().await?;
         }
         Command::Bootstrap { peer_addr } => {

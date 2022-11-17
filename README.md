@@ -6,7 +6,7 @@ This project implements a simplified p2p network. It allows to send message from
 a peer to another in a decentralized manner. Also, file sharing (like
 bittorrent) is also handled.
 
-More information is available in [doc section](doc/README).
+More information is available in [doc section](doc/README.md).
 
 # Running and playing with it
 
