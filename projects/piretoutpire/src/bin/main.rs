@@ -285,8 +285,8 @@ async fn main() -> AnyResult<()> {
             println!("Node found are: {:?}", peers);
         }
         Command::DownloadFile { file_crc } => {
-            manager.download_file(file_crc).await?;
-            println!("File downloaded: {}", file_crc);
+            let res = manager.download_file(file_crc).await?;
+            println!("download: {:?}", res);
         }
         Command::ShareFile { filename } => {
             let file_crc = manager.share_file(&filename).await?;

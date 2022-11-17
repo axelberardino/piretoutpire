@@ -17,15 +17,15 @@ launch "mkdir -p $BASE_DIR/a $BASE_DIR/b"
 LOG="$BASE_DIR/log"
 
 section "Launch peer A"
-launch_bg "./$BIN --server-addr=\"127.0.0.1:4001\" --peer-id=1 --dht-filename=/tmp/p2p-demo/a.dht seed" "$LOG"
+launch_bg "./$BIN --server-addr=\"127.0.0.1:4001\" --peer-id=1 --dht-filename=$BASE_DIR/a.dht seed" "$LOG"
 server_pid=$!
 sleep 1
 
 section "Bootstrap peer B"
-launch "./$BIN --server-addr=\"127.0.0.1:4002\" --peer-id=2 --dht-filename=/tmp/p2p-demo/b.dht bootstrap 127.0.0.1:4001"
+launch "./$BIN --server-addr=\"127.0.0.1:4002\" --peer-id=2 --dht-filename=$BASE_DIR/b.dht bootstrap 127.0.0.1:4001"
 
 section "Send message from B to A"
-launch "./$BIN --server-addr=\"127.0.0.1:4002\" --peer-id=2 --dht-filename=/tmp/p2p-demo/b.dht message 1 \"Hello A, this is B speaking!\""
+launch "./$BIN --server-addr=\"127.0.0.1:4002\" --peer-id=2 --dht-filename=$BASE_DIR/b.dht message 1 \"Hello A, this is B speaking!\""
 
 section "Peer A (seed server) should have received a ping from B and get its message"
 launch "cat $LOG"

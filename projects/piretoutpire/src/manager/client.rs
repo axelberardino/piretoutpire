@@ -86,7 +86,7 @@ pub async fn handle_file_chunk(
 
     match command {
         Command::ChunkResponse(crc, chunk_id, raw_chunk) => {
-            eprintln!("received buf {:?}", &raw_chunk);
+            // eprintln!("received buf {:?}", &raw_chunk);
             let mut guard = ctx.lock().await;
             let ctx = guard.deref_mut();
 

@@ -162,7 +162,7 @@ impl Manager {
     // Share a file on the peers network.
     pub async fn share_file<P: AsRef<Path>>(&mut self, file: P) -> AnyResult<u32> {
         let torrent = TorrentFile::from(
-            file.as_ref().display().to_string() + ".metadata",
+            file.as_ref().display().to_string() + ".torrent",
             file.as_ref().display().to_string(),
         )?;
         let chunks = FileChunk::open_existing(&torrent.metadata.original_file)?;

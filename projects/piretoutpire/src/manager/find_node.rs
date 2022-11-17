@@ -180,11 +180,7 @@ pub async fn query_find_node(
             if let Some(wait_time) = slowness {
                 sleep(wait_time).await;
             }
-            let peers = handle_find_node(Arc::clone(&ctx), stream, sender_addr, sender_id, target).await;
-            if let Err(err) = &peers {
-                dbg!(err);
-            }
-            let peers = peers?;
+            let peers = handle_find_node(Arc::clone(&ctx), stream, sender_addr, sender_id, target).await?;
 
             // The peer just answered us, let's add him into our dht.
             {

@@ -2,8 +2,8 @@
 
 BASE_DIR=/tmp/p2p-demo
 # DEMOS="simple-communication.sh message-network-of-2.sh message-network-of-3.sh\
-#     message-big-network.sh value-big-network.sh"
-DEMOS="value-big-network.sh"
+#     message-big-network.sh value-big-network.sh share-file.sh"
+DEMOS="share-file.sh"
 
 trap "echo" SIGTERM
 
