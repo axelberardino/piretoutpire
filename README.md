@@ -40,11 +40,16 @@ The simplest way you can launch a server is by doing that:
 cargo run -- seed
 ```
 
+<p align="center">
+    <img src="doc/terminal.png" width="800">
+</p>
+
+
 Then, there is a CLI (using clap and colored) which can be called like that:
 ```sh
 cargo run -- help
 ```
-The help will show all the possibilities.
+The help will show all the possibilities, as you can see here: [Help](doc/Help.md).
 
 It's also possible to generate the binary using:
 ```sh
@@ -60,6 +65,20 @@ it, watch the presentation and press enter to pass to the next simulation.
 
 ```sh
 make demo
+```
+
+A small glimpse of what it will looks like:
+```
+  _____  ______ __  __  ____
+ |  __ \|  ____|  \/  |/ __ \
+ | |  | | |__  | \  / | |  | |
+ | |  | |  __| | |\/| | |  | |
+ | |__| | |____| |  | | |__| |
+ |_____/|______|_|  |_|\____/
+
+CTRL + C will skip the current test, not the entire demo
+Press CTRL + C twice to abort the demo
+Press enter to start the demo
 ```
 
 # Tests
