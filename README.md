@@ -1,6 +1,8 @@
 # PireToutPire
 
-![logo](doc/pire_to_pire.png)
+<p align="center">
+    <img src="doc/pire_to_pire.png" width="300">
+</p>
 
 This project implements a simplified p2p network. It allows to send message from
 a peer to another in a decentralized manner. File sharing (like bittorrent) is
@@ -24,7 +26,12 @@ On top of that, some concept have been taken from bittorent, such as:
 Then:
   * send_message: simply send a message to a user by its ID.
 
-More information is available in the [doc section](doc/README.md).
+# Documentation and explanation
+
+There's a bunch of documentation available here: [doc section](doc/README.md).
+
+Mainly, you'll find explanation about the concept, implementation choices,
+limitations and security flaws.
 
 # Running and playing with it
 
