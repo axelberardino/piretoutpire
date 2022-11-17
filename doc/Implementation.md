@@ -71,7 +71,7 @@ them. We're repeating this process, until we found our nound, or if the next
 rounge of peers is not closer to target peer id.
 
 <p align="center">
-    <img src="find_node.png" width="300">
+    <img src="find_node.png" width="400">
 </p>
 
 Everytime, we're contacting a peer, this peer saves us in his routing table. It
