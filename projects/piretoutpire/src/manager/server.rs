@@ -4,7 +4,7 @@ use crate::{
     network::protocol::{Command, ErrorCode, FileInfo, Peer},
 };
 use colored::Colorize;
-use std::{net::SocketAddr, ops::DerefMut, sync::Arc};
+use std::{net::SocketAddr, ops::DerefMut, path::Path, sync::Arc};
 use tokio::sync::Mutex;
 
 // Server API ------------------------------------------------------------------
@@ -126,6 +126,7 @@ pub async fn serve_ping(
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();
     ctx.dht.add_node(sender_id, sender_addr).await;
+    let _ = ctx.dht.dump_to_file(Path::new(&ctx.dht_config_filename)).await;
 
     let header = "[PING]".to_owned().blue().on_truecolor(35, 38, 39).bold();
     log!(
@@ -161,6 +162,7 @@ pub async fn serve_store(
 
     ctx.dht.store_value(key, message);
     ctx.dht.add_node(sender_id, sender_addr).await;
+    let _ = ctx.dht.dump_to_file(Path::new(&ctx.dht_config_filename)).await;
 
     Command::StoreResponse()
 }
@@ -178,6 +180,7 @@ pub async fn serve_find_value(
     let mut guard = ctx.lock().await;
     let ctx = guard.deref_mut();
     ctx.dht.add_node(sender_id, sender_addr).await;
+    let _ = ctx.dht.dump_to_file(Path::new(&ctx.dht_config_filename)).await;
     let message = ctx.dht.get_value(key);
 
     match message {
@@ -228,6 +231,7 @@ pub async fn serve_announce(
         },
     );
     ctx.dht.add_node(sender_id, sender_addr).await;
+    let _ = ctx.dht.dump_to_file(Path::new(&ctx.dht_config_filename)).await;
 
     Command::AnnounceResponse()
 }

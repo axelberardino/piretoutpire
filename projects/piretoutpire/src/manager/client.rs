@@ -193,10 +193,7 @@ pub async fn handle_find_value(
     let command = find_value(Arc::clone(&ctx), Arc::clone(&stream), sender_addr, sender_id, key).await?;
 
     match command {
-        Command::FindValueResponse(message) => {
-            eprintln!("got value {:?}", message);
-            Ok(Some(message))
-        }
+        Command::FindValueResponse(message) => Ok(Some(message)),
         Command::ErrorOccured(ErrorCode::KeyNotFound) => Ok(None),
         Command::ErrorOccured(error) => bail!("peer return error: {}", error),
         _ => bail!("Wrong command received: {:?}", command),

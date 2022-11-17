@@ -34,14 +34,18 @@ pub struct Context {
 
     /// Frequency at which the dht is dump on the disk.
     pub dht_dump_frequency: Duration,
+
+    /// Where to save the dht
+    pub dht_config_filename: String,
 }
 
 impl Context {
     // Create a new context from a working directory
-    pub fn new(working_directory: String, self_id: u32) -> Self {
+    pub fn new(dht_config_filename: String, working_directory: String, self_id: u32) -> Self {
         Self {
             dht: DistributedHashTable::new(self_id),
             available_torrents: HashMap::new(),
+            dht_config_filename,
             working_directory,
             slowness: None,
             connection_timeout: Duration::from_millis(DEFAULT_CONNECTION_TIMEOUT_MS),
@@ -62,6 +66,7 @@ impl Context {
         Self {
             dht,
             available_torrents: HashMap::new(),
+            dht_config_filename: "".to_owned(),
             working_directory: "".to_owned(),
             slowness: None,
             connection_timeout: Duration::from_millis(DEFAULT_CONNECTION_TIMEOUT_MS),

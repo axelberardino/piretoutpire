@@ -37,7 +37,6 @@ pub struct Manager {
     addr: SocketAddr,
     ctx: Arc<Mutex<Context>>,
     max_hop: Option<u32>,
-    dht_config_filename: String,
 }
 
 impl Manager {
@@ -48,9 +47,12 @@ impl Manager {
         Self {
             id,
             addr,
-            ctx: Arc::new(Mutex::new(Context::new(working_directory, id))),
+            ctx: Arc::new(Mutex::new(Context::new(
+                dht_config_filename,
+                working_directory,
+                id,
+            ))),
             max_hop: None,
-            dht_config_filename,
         }
     }
 
@@ -123,7 +125,7 @@ impl Manager {
 
     // Dump the dht into a file.
     pub async fn dump_dht(&self) -> AnyResult<()> {
-        dump_dht(Arc::clone(&self.ctx), &self.dht_config_filename).await?;
+        dump_dht(Arc::clone(&self.ctx)).await?;
         Ok(())
     }
 
@@ -206,13 +208,12 @@ impl Manager {
         let listener = TcpListener::bind(self.addr).await?;
 
         // Let's write the peers list regularly on the disk.
-        let dht_config_filename = self.dht_config_filename.clone();
         let ctx = Arc::clone(&self.ctx);
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(dht_dump_frequency);
             loop {
                 interval.tick().await;
-                let _ = dump_dht(Arc::clone(&ctx), &dht_config_filename).await;
+                let _ = dump_dht(Arc::clone(&ctx)).await;
             }
         });
 
@@ -256,6 +257,7 @@ impl Manager {
             query_find_node,
         )
         .await?;
+
         Ok(peer)
     }
 
@@ -507,7 +509,7 @@ impl Manager {
             // value.
             find_closest_node(
                 Arc::clone(&self.ctx),
-                peer.into(),
+                peer.clone().into(),
                 self.addr,
                 self.id(),
                 target,
@@ -522,7 +524,7 @@ impl Manager {
                 ctx.dht.find_closest_peers(target, 4).await
             };
             let mut nb_store = 0;
-            for close_peer in closest_peers {
+            for close_peer in closest_peers.chain(std::iter::once(peer)) {
                 let stream = Arc::new(Mutex::new(TcpStream::connect(close_peer.addr()).await?));
                 if handle_store(
                     Arc::clone(&self.ctx),
@@ -664,16 +666,17 @@ async fn ping(
         let mut guard = ctx.lock().await;
         let ctx = guard.deref_mut();
         ctx.dht.add_node(target, peer.addr).await;
+        let _ = ctx.dht.dump_to_file(Path::new(&ctx.dht_config_filename)).await;
     }
 
     Ok(target)
 }
 
 // Dump the dht into a file.
-async fn dump_dht(ctx: Arc<Mutex<Context>>, dht_config_filename: &String) -> AnyResult<()> {
+async fn dump_dht(ctx: Arc<Mutex<Context>>) -> AnyResult<()> {
     let guard = ctx.lock().await;
     let ctx = guard.deref();
-    ctx.dht.dump_to_file(Path::new(dht_config_filename)).await?;
+    ctx.dht.dump_to_file(Path::new(&ctx.dht_config_filename)).await?;
     Ok(())
 }
 

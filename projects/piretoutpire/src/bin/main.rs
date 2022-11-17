@@ -163,7 +163,7 @@ pub enum Command {
     /// Store a value on the dht.
     #[clap(arg_required_else_help = true)]
     #[clap(name = "store-value")]
-    Store {
+    StoreValue {
         /// Key
         #[clap(value_parser)]
         key: u32,
@@ -172,7 +172,7 @@ pub enum Command {
         value: String,
     },
 
-    /// Store a value on the dht.
+    /// Find a value on the dht.
     #[clap(arg_required_else_help = true)]
     #[clap(name = "find-value")]
     FindValue {
@@ -264,15 +264,21 @@ async fn main() -> AnyResult<()> {
         Command::Bootstrap { peer_addr } => {
             let peer_found = manager.bootstrap(peer_addr.parse()?).await?;
             manager.dump_dht().await?;
-            println!("Bootstrap done, find node: {:?}", peer_found);
+            println!(
+                "Bootstrap done, find node: {:?}, known peers {}",
+                peer_found,
+                manager.known_peers_count().await
+            );
         }
         Command::Ping { target } => {
             let succeed = manager.ping(target).await?;
             println!("Node {} acknowledge: {}", target, succeed);
+            manager.dump_dht().await?;
         }
         Command::FindNode { target } => {
             let peers = manager.find_node(target).await?;
             println!("Node found are: {:?}", peers);
+            manager.dump_dht().await?;
         }
         Command::DirectFindNode { peer_addr, target } => {
             let peers = manager.direct_find_node(peer_addr.parse()?, target).await?;
@@ -305,9 +311,10 @@ async fn main() -> AnyResult<()> {
             let file_info = manager.file_info(file_crc).await?;
             println!("File info: {:?}", file_info);
         }
-        Command::Store { key, value } => {
+        Command::StoreValue { key, value } => {
             let nb_ack = manager.store_value(key, value).await?;
-            println!("{} peers sotre this value", nb_ack);
+            println!("{} peers store this value", nb_ack);
+            manager.dump_dht().await?;
         }
         Command::FindValue { key } => {
             let value = manager.find_value(key).await?;
