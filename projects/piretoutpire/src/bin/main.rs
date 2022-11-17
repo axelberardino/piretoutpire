@@ -147,6 +147,19 @@ pub enum Command {
         target: u32,
     },
 
+    /// Directly ask the closest peers of a peer by its address
+    #[clap(arg_required_else_help = true)]
+    #[clap(name = "direct-find-node")]
+    DirectFindNode {
+        /// Address of the node to query
+        #[clap(value_parser)]
+        peer_addr: String,
+
+        /// Peer id of the target
+        #[clap(value_parser)]
+        target: u32,
+    },
+
     /// Store a value on the dht.
     #[clap(arg_required_else_help = true)]
     #[clap(name = "store-value")]
@@ -259,6 +272,10 @@ async fn main() -> AnyResult<()> {
         }
         Command::FindNode { target } => {
             let peers = manager.find_node(target).await?;
+            println!("Node found are: {:?}", peers);
+        }
+        Command::DirectFindNode { peer_addr, target } => {
+            let peers = manager.direct_find_node(peer_addr.parse()?, target).await?;
             println!("Node found are: {:?}", peers);
         }
         Command::DownloadFile { file_crc } => {

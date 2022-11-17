@@ -259,17 +259,34 @@ impl Manager {
         Ok(peer)
     }
 
+    // Allow to directly ask a peer by its address, for its closest node.
+    pub async fn direct_find_node(&mut self, peer_addr: SocketAddr, target: u32) -> AnyResult<Option<Peer>> {
+        let peer = Peer {
+            id: 0,
+            addr: peer_addr,
+        };
+
+        let peer = find_closest_node(
+            Arc::clone(&self.ctx),
+            peer,
+            self.addr,
+            self.id(),
+            target,
+            self.max_hop,
+            query_find_node,
+        )
+        .await?;
+        Ok(peer)
+    }
+
     // Find node will try to return the wanted peer, or the 4 most closest ones
     // if he's not found.
-    pub async fn find_node(&mut self, target: u32) -> AnyResult<Vec<Peer>> {
+    pub async fn find_node(&self, target: u32) -> AnyResult<Vec<Peer>> {
         // Get the closest possible node from the target, to start the search.
         let peer = {
             let guard = self.ctx.lock().await;
             let ctx = guard.deref();
-            ctx.dht
-                .find_closest_peer(target)
-                .await
-                .filter(|peer| peer.id() == target)
+            ctx.dht.find_closest_peer(target).await
         };
 
         match peer {
@@ -332,42 +349,14 @@ impl Manager {
 
     // Send a message to a peer. Return if the peer acknowledge it.
     pub async fn send_message(&self, target: u32, message: String) -> AnyResult<bool> {
-        let close_peer = {
-            let guard = self.ctx.lock().await;
-            let ctx = guard.deref();
-            // Let's check if we have a candidate, and if our exact node.
-            ctx.dht.find_closest_peer(target).await
-        };
-
-        let peer = match close_peer {
-            Some(peer) if peer.id() == target => peer,
-            Some(peer) => {
-                // We don't have this peer, let's try to find it.
-                find_closest_node(
-                    Arc::clone(&self.ctx),
-                    peer.into(),
-                    self.addr,
-                    self.id(),
-                    self.id(),
-                    self.max_hop,
-                    query_find_node,
-                )
-                .await?;
-
-                let guard = self.ctx.lock().await;
-                let ctx = guard.deref();
-                let close_peer_again = ctx.dht.find_closest_peer(target).await;
-                match close_peer_again {
-                    Some(peer) if peer.id() == target => peer,
-                    _ => return Ok(false),
-                }
-            }
-            None => return Ok(false),
-        };
-
-        let stream = Arc::new(Mutex::new(TcpStream::connect(peer.addr()).await?));
-        handle_message(Arc::clone(&self.ctx), stream, message).await?;
-        Ok(true)
+        let closest_peers = self.find_node(target).await?;
+        let peer = closest_peers.iter().find(|peer| peer.id == target);
+        if let Some(peer) = peer {
+            let stream = Arc::new(Mutex::new(TcpStream::connect(peer.addr).await?));
+            handle_message(Arc::clone(&self.ctx), stream, message).await?;
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     // Return a file description from its crc

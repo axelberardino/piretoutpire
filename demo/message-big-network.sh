@@ -39,7 +39,7 @@ for i in $(seq 2 30); do
     mkdir -p "$BASE_DIR/$pi/files"
 
     ./$BIN  --server-addr="127.0.0.1:40${pi}" --peer-id=${i} --dht-filename=$BASE_DIR/${pi}/dht --working-dir=$BASE_DIR/${pi}/files --share-dir=$BASE_DIR/${pi}/files bootstrap "127.0.0.1:40${pp}" #>/dev/null
-    ./$BIN --server-addr="127.0.0.1:40${pi}" --peer-id=${i} --dht-filename=$BASE_DIR/${pi}/dht --working-dir=$BASE_DIR/${pi}/files --share-dir=$BASE_DIR/${pi}/files seed >/dev/null &
+    ./$BIN --server-addr="127.0.0.1:40${pi}" --peer-id=${i} --dht-filename=$BASE_DIR/${pi}/dht --working-dir=$BASE_DIR/${pi}/files --share-dir=$BASE_DIR/${pi}/files seed >$BASE_DIR/log${pi} &
     server_pids="$server_pids $!"
     sleep 0.3
 
@@ -56,6 +56,8 @@ launch "./$BIN --server-addr=\"127.0.0.1:4031\" --peer-id=31 --dht-filename=$BAS
 
 section "Peer 1 should have received a ping from 31 and get its message"
 launch "cat $LOG"
+
+wait
 
 section "Stop the seed peer"
 launch "kill $server_pids &>/dev/null"

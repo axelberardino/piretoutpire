@@ -74,20 +74,16 @@ impl RoutingTable {
         self.bucket_tree
             .get_all_peers()
             .await
-            .chain(self.latest_too_far_peers.iter().map(Clone::clone))
             .map(|mut peer| {
                 peer.set_id(distance(peer.id(), self.id));
                 peer
             })
+            .chain(self.latest_too_far_peers.iter().map(Clone::clone))
     }
 
     // Get the closest peers from a given target.
     pub async fn get_closest_peers_from(&self, target: u32, nb: usize) -> impl Iterator<Item = PeerNode> {
-        let mut peers = self
-            .get_all_peers()
-            .await
-            .chain(self.latest_too_far_peers.iter().map(Clone::clone))
-            .collect::<Vec<_>>();
+        let mut peers = self.get_all_peers().await.collect::<Vec<_>>();
         peers.sort_by_key(|peer| distance(peer.id(), target));
         peers.into_iter().take(nb)
     }
